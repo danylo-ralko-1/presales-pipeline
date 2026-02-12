@@ -22,9 +22,13 @@ Claude will set up the folder structure, ask for your Azure DevOps org and proje
 
 ### Processing requirements
 
-> "I dropped some PDF files into the input folder. Can you read them and give me an overview?"
+Just drag and drop your files (PDF, DOCX, XLSX, images) directly into the Claude Code chat. No need to manually copy anything into folders — Claude will place them in the right location automatically and start processing.
 
-Claude will parse the files, extract the requirements, and generate a summary with clarification questions for the client.
+> *drop files into chat*
+>
+> "These are the requirements for the project. Read them and give me an overview."
+
+Claude will save the files, parse them, extract the requirements, and generate a summary with clarification questions for the client.
 
 ### Generating stories
 
@@ -107,7 +111,7 @@ That's it. Claude reads the `CLAUDE.md` instructions automatically and knows how
 | What you want | Just say something like... |
 |---|---|
 | Set up a new project | "Create a new project called ClientName" |
-| Read requirement files | "Ingest the files in my input folder" |
+| Read requirement files | *(drop files into chat)* "These are the requirements" |
 | Get a requirements overview | "Summarize the requirements and give me questions for the client" |
 | Break down into stories | "Generate a breakdown with estimates" |
 | Export to Excel | "Export the breakdown to an Excel file" |
