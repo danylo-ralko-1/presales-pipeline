@@ -150,6 +150,32 @@ Located in `~/Downloads/presales-pipeline/`. Run with `python3 presales <command
 
 ## ADO Work Item Format
 
+### Hierarchy (MANDATORY)
+
+Every User Story **must** live inside the following hierarchy:
+
+```
+Epic → Feature → User Story → Tasks (FE/BE/DevOps)
+```
+
+**Before creating any User Story, always:**
+1. **Fetch all existing open Epics and Features** from ADO.
+2. **Match by content** — if an existing Epic or Feature logically covers the new story, use it as the parent. Do NOT create duplicates.
+3. **Create new Epic/Feature only if no match exists.** When creating:
+   - Epic: give it a broad domain name (e.g. "Glossary Application (Phase 1)")
+   - Feature: give it a functional area name (e.g. "Terms Page", "FAQ Page")
+   - Link the Feature to its parent Epic via `System.LinkTypes.Hierarchy-Reverse`
+4. **Link the User Story** to its parent Feature via `System.LinkTypes.Hierarchy-Reverse`.
+
+### Tagging (MANDATORY)
+
+Every time you create or modify a User Story in ADO, apply the appropriate tag via `System.Tags`:
+
+- **`Claude New Story`** — when creating a brand-new User Story from scratch
+- **`Claude Modified Story`** — when updating an existing User Story (e.g. enriching AC, changing title, modifying effort)
+
+Tags are additive — preserve any existing tags on the work item. Use semicolons to separate multiple tags (e.g. `"Existing Tag; Claude Modified Story"`).
+
 ### User Story
 
 **Description field:**
@@ -180,16 +206,18 @@ Located in `~/Downloads/presales-pipeline/`. Run with `python3 presales <command
 - For enriched stories: reference specific UI elements from Figma designs
 - For lightweight stories: scope-level only, no implementation details
 
-### Tasks (child items under User Story)
+### Tasks (MANDATORY child items under User Story)
 
-For each discipline with effort > 0, create a Task as a child of the User Story:
+When creating a User Story, **always** create discipline tasks as children:
 
-- **Frontend:** Title = `[FE] <User Story Title>`, Effort = fe_days
-- **Backend:** Title = `[BE] <User Story Title>`, Effort = be_days
-- **DevOps:** Title = `[DevOps] <User Story Title>`, Effort = devops_days
+- **Frontend:** Title = `[FE] <User Story Title>`, Effort = fe_days — create if the story has any frontend work (UI, components, styling, client-side logic)
+- **Backend:** Title = `[BE] <User Story Title>`, Effort = be_days — create if the story has any backend work (API, database, integrations, server-side logic)
+- **DevOps:** Title = `[DevOps] <User Story Title>`, Effort = devops_days — create only if explicit DevOps work is needed
 - **Design tasks are NOT created**
 
-Only create tasks for disciplines where effort is greater than 0.
+Link each Task to its parent User Story via `System.LinkTypes.Hierarchy-Reverse`.
+
+If effort values are not yet assigned, still create the tasks (with effort = 0) so the hierarchy is complete. Effort can be updated later during estimation.
 
 ---
 
@@ -278,6 +306,8 @@ Before running `presales push`, generate this file with full story details:
 4. **Ask for missing info** — if you need a Figma link, project name, or clarification, ask in plain language
 5. **Wait for approval** before modifying ADO — always show proposed changes first
 6. **Match existing format** — new stories should look identical to existing ones in ADO
+6b. **Enforce hierarchy** — every User Story must have a parent Feature, every Feature must have a parent Epic. Always check existing Epics/Features before creating new ones. Always create FE/BE tasks as children of User Stories.
+6c. **Tag every story change** — apply `Claude New Story` when creating, `Claude Modified Story` when updating existing stories. Never skip tagging.
 7. **Be incremental** — enrichment and validation can run multiple times as designs evolve
 8. **Track changes** — every scope change gets logged in project.yaml and ADO Change Log
 9. **Snapshot before changes** — always create a snapshot before processing change requests
