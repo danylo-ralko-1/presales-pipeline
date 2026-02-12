@@ -1,8 +1,143 @@
 # PreSales Pipeline
 
-Automated software pre-sales workflow powered by Claude Code. Handles requirements ingestion, story generation, Azure DevOps integration, Figma design validation, and change request management.
+An AI-powered pre-sales assistant that lives in your terminal. Just open Claude Code, describe what you need in plain English, and it handles requirements, Azure DevOps stories, Figma design validation, and technical specs for you.
 
-Claude Code does all the reasoning — Python scripts handle data I/O only.
+**You don't need to memorize any commands.** Just chat with Claude like you would with a colleague.
+
+## How It Works
+
+Open your terminal in the project folder and start Claude Code:
+
+```bash
+claude
+```
+
+Then just tell it what you want. Here are some real examples:
+
+### Starting a new project
+
+> "Create a new presales project called Glossary"
+
+Claude will set up the folder structure, ask for your Azure DevOps org and project name, and get everything ready.
+
+### Processing requirements
+
+> "I dropped some PDF files into the input folder. Can you read them and give me an overview?"
+
+Claude will parse the files, extract the requirements, and generate a summary with clarification questions for the client.
+
+### Generating stories
+
+> "Break down these requirements into user stories with estimates"
+
+Claude will create a structured breakdown with epics, features, stories, and effort estimates (FE/BE/DevOps/Design).
+
+### Pushing to Azure DevOps
+
+> "Push these stories to ADO"
+
+Claude will create the full hierarchy in Azure DevOps — Epics, Features, User Stories with acceptance criteria, and FE/BE tasks — all properly linked.
+
+### Validating designs against requirements
+
+> "Compare my ADO requirements with this Figma design and check if they match"
+>
+> *paste your Figma link*
+
+Claude will screenshot every Figma screen, read your ADO stories, and produce a validation report showing what matches, what's missing, and what conflicts.
+
+### Enriching stories from designs
+
+> "Enrich the acceptance criteria for my stories using the Figma designs"
+
+Claude will update each story's AC with specific UI details from the designs — without adding pixel-level specs.
+
+### Generating technical specs
+
+> "Generate YAML files with technical specifications for the FAQ page story"
+
+Claude will create detailed FE and BE spec files and can upload them directly to the ADO tasks.
+
+### Handling change requests
+
+> "I got a change request from the client — they want to add a new filter. Here's the document."
+>
+> *drop the file into chat*
+
+Claude will analyze the impact, identify affected stories, and propose updates to ADO.
+
+## One-Time Setup
+
+### 1. Clone and install
+
+```bash
+git clone https://github.com/danylo-ralko-1/presales-pipeline.git
+cd presales-pipeline
+pip install pyyaml click openpyxl requests python-docx pdfplumber
+chmod +x presales
+```
+
+### 2. Add your credentials
+
+```bash
+cp .env.example .env
+```
+
+Open `.env` and paste your tokens:
+
+```
+ADO_PAT=your_azure_devops_pat_here
+FIGMA_PAT=your_figma_personal_access_token_here
+```
+
+**Where to get them:**
+- **ADO PAT:** dev.azure.com → User Settings → Personal Access Tokens (needs Work Items read/write)
+- **Figma PAT:** figma.com → Settings → Personal Access Tokens
+
+### 3. Start chatting
+
+```bash
+claude
+```
+
+That's it. Claude reads the `CLAUDE.md` instructions automatically and knows how the pipeline works. Just tell it what you need.
+
+## What You Can Ask Claude To Do
+
+| What you want | Just say something like... |
+|---|---|
+| Set up a new project | "Create a new project called ClientName" |
+| Read requirement files | "Ingest the files in my input folder" |
+| Get a requirements overview | "Summarize the requirements and give me questions for the client" |
+| Break down into stories | "Generate a breakdown with estimates" |
+| Export to Excel | "Export the breakdown to an Excel file" |
+| Push stories to ADO | "Push these stories to Azure DevOps" |
+| Validate against Figma | "Compare ADO stories with this Figma link: ..." |
+| Enrich acceptance criteria | "Enrich the stories from the Figma designs" |
+| Handle a change request | "Analyze this change request" *(drop file)* |
+| Generate tech specs | "Generate FE and BE specs for story #123" |
+| Upload specs to ADO | "Upload the specs to the ADO tasks" |
+| Generate product document | "Create a product document from all the ADO stories" |
+| Check project status | "What's the status of the Glossary project?" |
+
+## Project Structure
+
+```
+presales-pipeline/
+├── presales              # CLI entrypoint (used by Claude behind the scenes)
+├── commands/             # Pipeline command implementations
+├── core/                 # Config, ADO client, parser, context
+├── projects/             # Your project workspaces (gitignored)
+│   └── <ProjectName>/
+│       ├── project.yaml  # Config: ADO/Figma credentials, pipeline state
+│       ├── input/        # Drop your requirement files here
+│       ├── answers/      # Client answers to clarification questions
+│       ├── changes/      # Change request files
+│       ├── output/       # Everything Claude generates
+│       └── snapshots/    # Auto-snapshots before change requests
+├── .env                  # Your credentials (gitignored)
+└── CLAUDE.md             # Instructions Claude follows automatically
+```
 
 ## Prerequisites
 
@@ -11,104 +146,23 @@ Claude Code does all the reasoning — Python scripts handle data I/O only.
 - Azure DevOps account with a Personal Access Token
 - (Optional) Figma account with a Personal Access Token for design validation
 
-## Setup
+---
 
-1. **Clone the repo:**
+<details>
+<summary><b>CLI Command Reference (advanced)</b></summary>
 
-   ```bash
-   git clone https://github.com/danylo-ralko-1/presales-pipeline.git
-   cd presales-pipeline
-   ```
-
-2. **Install Python dependencies:**
-
-   ```bash
-   pip install pyyaml click openpyxl requests python-docx pdfplumber
-   ```
-
-3. **Configure credentials:**
-
-   Copy the example env file and fill in your tokens:
-
-   ```bash
-   cp .env.example .env
-   ```
-
-   Edit `.env`:
-
-   ```
-   ADO_PAT=your_azure_devops_pat_here
-   FIGMA_PAT=your_figma_personal_access_token_here
-   ```
-
-   - **ADO PAT:** dev.azure.com → User Settings → Personal Access Tokens (needs Work Items read/write scope)
-   - **Figma PAT:** figma.com → Settings → Personal Access Tokens
-
-4. **Make the CLI executable (macOS/Linux):**
-
-   ```bash
-   chmod +x presales
-   ```
-
-## Creating a New Project
-
-```bash
-python3 presales init MyProject
-```
-
-This creates `projects/MyProject/` with the required folder structure and a `project.yaml` config file. You'll be prompted for your ADO organization and project name.
-
-Then drop your requirement files (PDF, DOCX, XLSX, TXT, images) into `projects/MyProject/input/` and start the pipeline:
-
-```bash
-python3 presales ingest MyProject
-```
-
-## Pipeline Commands
+These are the Python commands that Claude runs behind the scenes. You don't need to use them directly — Claude will call them for you. But if you prefer running things manually:
 
 | Command | Description |
 |---------|-------------|
-| `presales init <project>` | Create a new project |
-| `presales ingest <project>` | Parse requirements from input files |
-| `presales breakdown-export <project>` | Export breakdown to Excel |
-| `presales push <project>` | Push stories to Azure DevOps |
-| `presales validate <project> --figma-link <url>` | Compare Figma designs against ADO stories |
-| `presales enrich <project> --figma-link <url>` | Enrich story AC from Figma designs |
-| `presales specs-upload <project>` | Upload spec files to ADO tasks |
-| `presales status <project>` | Show project status and staleness |
-| `presales list` | List all projects |
+| `python3 presales init <project>` | Create a new project |
+| `python3 presales ingest <project>` | Parse requirements from input files |
+| `python3 presales breakdown-export <project>` | Export breakdown to Excel |
+| `python3 presales push <project>` | Push stories to Azure DevOps |
+| `python3 presales validate <project> --figma-link <url>` | Compare Figma designs against ADO stories |
+| `python3 presales enrich <project> --figma-link <url>` | Enrich story AC from Figma designs |
+| `python3 presales specs-upload <project>` | Upload spec files to ADO tasks |
+| `python3 presales status <project>` | Show project status |
+| `python3 presales list` | List all projects |
 
-## Workflow
-
-The typical flow inside a Claude Code conversation:
-
-1. **Ingest** — parse requirement files into structured text
-2. **Discover** — Claude reads requirements, generates overview and clarification questions
-3. **Breakdown** — Claude generates epics/features/stories with estimates
-4. **Push** — create work items in Azure DevOps
-5. **Validate** — compare Figma designs against ADO stories, find gaps
-6. **Enrich** — update story acceptance criteria from Figma designs
-7. **Specs** — generate frontend/backend YAML specs per story
-
-Use `/help` inside Claude Code for guided walkthroughs of each step.
-
-## Project Structure
-
-```
-presales-pipeline/
-├── presales              # CLI entrypoint
-├── commands/             # Pipeline command implementations
-├── core/                 # Config, ADO client, parser, context
-├── .claude/skills/       # Claude Code skill definitions
-├── projects/             # Project workspaces (gitignored)
-│   └── <ProjectName>/
-│       ├── project.yaml  # Config: ADO/Figma credentials, state
-│       ├── input/        # Raw requirement files
-│       ├── answers/      # Client answers to questions
-│       ├── changes/      # Change request files
-│       ├── output/       # Generated artifacts
-│       └── snapshots/    # Versioned snapshots
-├── .env                  # Credentials (gitignored)
-├── .env.example          # Credential template
-└── CLAUDE.md             # Claude Code instructions
-```
+</details>
