@@ -1,0 +1,238 @@
+#!/usr/bin/env python3
+"""PreSales Pipeline CLI - Single entry point for all presales operations."""
+
+import click
+import sys
+import os
+from pathlib import Path
+
+# Add parent dir to path so core/ is importable
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+
+def _load_dotenv():
+    """Load .env file from project root if it exists."""
+    env_path = Path(__file__).resolve().parent / ".env"
+    if not env_path.exists():
+        return
+    with open(env_path, encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, _, value = line.partition("=")
+            os.environ.setdefault(key.strip(), value.strip())
+
+
+_load_dotenv()
+
+from core.config import (
+    init_project, load_project, list_projects, save_project,
+    get_input_dir, get_answers_dir, get_changes_dir
+)
+from core.context import check_staleness
+
+
+@click.group()
+@click.version_option(version="3.0.0")
+def cli():
+    """PreSales Pipeline - Automated software pre-sales workflow.
+
+    Flow: ingest → (conversation: discover, breakdown) → push → enrich
+
+    Additional: validate, breakdown-export, specs-upload
+    """
+    pass
+
+
+# --- Project management ---
+
+@cli.command()
+@click.argument("project_name")
+def init(project_name):
+    """Initialize a new presales project."""
+    click.secho(f"\n  Creating project: {project_name}", bold=True)
+
+    org = click.prompt("  ADO Organization", default="")
+    project = click.prompt("  ADO Project", default="")
+    pat = click.prompt("  ADO PAT Token", hide_input=True, default="")
+
+    proj = init_project(project_name, ado={"organization": org, "project": project, "pat": pat})
+
+    click.secho(f"\n  ✓ Project '{project_name}' created", fg="green", bold=True)
+    click.echo(f"    Path: {proj['path']}")
+    click.echo(f"\n    Next: drop requirements into {get_input_dir(proj)}")
+    click.echo(f"    Then: presales ingest {project_name}")
+
+
+@cli.command("list")
+def list_cmd():
+    """List all projects."""
+    projects = list_projects()
+    if not projects:
+        click.echo("  No projects found.")
+        return
+    click.secho(f"\n  Projects ({len(projects)}):", bold=True)
+    for p in projects:
+        proj = load_project(p)
+        status = proj.get("status", "unknown") if proj else "error"
+        click.echo(f"    {p:30s} [{status}]")
+
+
+@cli.command()
+@click.argument("project_name")
+def status(project_name):
+    """Show project status and artifact staleness."""
+    proj = _load_or_exit(project_name)
+    if not proj:
+        return
+
+    click.secho(f"\n  Project: {project_name}", bold=True)
+    click.echo(f"  Status: {proj.get('status', 'unknown')}")
+
+    state = proj.get("state", {})
+    click.secho(f"\n  Pipeline state:", bold=True)
+
+    steps = [
+        ("requirements_ingested", "Requirements ingested"),
+        ("breakdown_generated", "Breakdown generated"),
+        ("ado_pushed", "Pushed to ADO"),
+        ("validated", "Design validation run"),
+        ("enriched", "AC enriched from designs"),
+        ("specs_generated", "Specs generated"),
+    ]
+    for key, label in steps:
+        val = state.get(key, False)
+        icon = "✓" if val else "○"
+        color = "green" if val else None
+        click.secho(f"    {icon} {label}", fg=color)
+
+    # Show changes
+    changes = proj.get("changes", [])
+    if changes:
+        click.secho(f"\n  Change requests: {len(changes)}", bold=True)
+        total_delta = sum(c.get("cost_delta", 0) for c in changes)
+        click.echo(f"    Total cost impact: ${total_delta:+,.0f}")
+
+    # Staleness warnings
+    warnings = check_staleness(proj)
+    if warnings:
+        click.secho(f"\n  ⚠ Staleness warnings:", fg="yellow")
+        for w in warnings:
+            click.echo(f"    {w}")
+
+
+# --- Pipeline commands ---
+
+@cli.command()
+@click.argument("project_name")
+def ingest(project_name):
+    """Parse and ingest raw requirements from input/ folder."""
+    proj = _load_or_exit(project_name)
+    if not proj:
+        return
+    _warn_stale(proj, "ingest")
+
+    from commands.ingest import run
+    run(proj)
+    save_project(proj)
+
+
+@cli.command("breakdown-export")
+@click.argument("project_name")
+def breakdown_export(project_name):
+    """Export breakdown.json → breakdown.xlsx."""
+    proj = _load_or_exit(project_name)
+    if not proj:
+        return
+
+    from commands.breakdown_export import run
+    run(proj)
+
+
+@cli.command()
+@click.argument("project_name")
+@click.option("--dry-run", is_flag=True, help="Preview without creating ADO items")
+def push(project_name, dry_run):
+    """Push stories to Azure DevOps from push_ready.json (or breakdown.json)."""
+    proj = _load_or_exit(project_name)
+    if not proj:
+        return
+    _warn_stale(proj, "push")
+
+    from commands.push import run
+    run(proj, dry_run=dry_run)
+    save_project(proj)
+
+
+@cli.command()
+@click.argument("project_name")
+@click.option("--figma-link", required=True, help="Figma file URL")
+def validate(project_name, figma_link):
+    """Fetch Figma screenshots + ADO stories → validation_bundle.json."""
+    proj = _load_or_exit(project_name)
+    if not proj:
+        return
+
+    from commands.validate import run
+    run(proj, figma_link=figma_link)
+    save_project(proj)
+
+
+@cli.command()
+@click.argument("project_name")
+@click.option("--figma-link", required=True, help="Figma file URL")
+@click.option("--story-ids", default=None, help="Comma-separated ADO story IDs to enrich (optional)")
+def enrich(project_name, figma_link, story_ids):
+    """Fetch Figma screenshots + ADO stories → enrichment_bundle.json."""
+    proj = _load_or_exit(project_name)
+    if not proj:
+        return
+
+    # Parse story IDs if provided
+    ids_list = None
+    if story_ids:
+        ids_list = [s.strip() for s in story_ids.split(",") if s.strip()]
+
+    from commands.enrich import run
+    run(proj, figma_link=figma_link, story_ids=ids_list)
+    save_project(proj)
+
+
+@cli.command("specs-upload")
+@click.argument("project_name")
+def specs_upload(project_name):
+    """Upload YAML spec files to ADO tasks as attachments."""
+    proj = _load_or_exit(project_name)
+    if not proj:
+        return
+
+    from commands.specs_upload import run
+    run(proj)
+
+
+# --- Helpers ---
+
+def _load_or_exit(project_name: str) -> dict | None:
+    """Load project or print error."""
+    proj = load_project(project_name)
+    if not proj:
+        click.secho(f"  ✗ Project '{project_name}' not found.", fg="red")
+        click.echo(f"    Run: presales init {project_name}")
+        return None
+    return proj
+
+
+def _warn_stale(proj: dict, command: str) -> None:
+    """Print staleness warnings for a command."""
+    from core.context import get_dependencies
+    deps = get_dependencies(command)
+    state = proj.get("state", {})
+
+    for key, msg in deps:
+        if not state.get(key, False):
+            click.secho(f"  ⚠ {msg}", fg="yellow")
+
+
+if __name__ == "__main__":
+    cli()
