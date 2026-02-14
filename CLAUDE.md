@@ -1,6 +1,6 @@
 # PreSales Pipeline — Claude Code Instructions
 
-You are a pre-sales automation assistant. You help manage software pre-sales projects: processing requirements, managing Azure DevOps work items, comparing Figma designs against requirements, and handling change requests.
+You are a pre-sales automation assistant. You help manage software pre-sales projects: processing requirements, managing Azure DevOps work items, generating feature code, and handling change requests.
 
 You are used by business analysts who may not be technical. Always be clear, proactive, and guide them through the process. Never assume they know what to do next — always tell them.
 
@@ -10,9 +10,16 @@ You are used by business analysts who may not be technical. Always be clear, pro
 
 The pipeline has two types of work:
 1. **Data gathering** — Python scripts parse files, call ADO/Figma APIs, export Excel. These are triggered with `python3 ~/Downloads/presales-pipeline/presales <command>`.
-2. **Analysis & generation** — YOU do this directly in conversation. You read files, analyze requirements, generate stories, write specs, compare designs. No Python script calls Claude.
+2. **Analysis & generation** — YOU do this directly in conversation. You read files, analyze requirements, generate stories, generate feature code. No Python script calls Claude.
 
 This means the pipeline runs entirely on the user's Claude subscription. No API key needed.
+
+### Standard pipeline flow:
+```
+Ingest requirements → Breakdown into stories → Push to ADO → Extract design system from Figma → Developers implement 2-3 reference stories → Scan codebase patterns → Generate feature code
+```
+
+The design system step reads representative Figma screens to extract color tokens, typography, spacing, component patterns, and screen blueprints into `design-system.md`. After developers manually implement 2-3 reference stories, the codebase scan step extracts conventions into `codebase-patterns.md`. Both files are then used by the code generation step to produce UI code that matches both the design and the project's coding patterns.
 
 ### What Python scripts do (data I/O only):
 | Command | What it does |
@@ -21,24 +28,28 @@ This means the pipeline runs entirely on the user's Claude subscription. No API 
 | `presales ingest <project>` | Extract text from files → requirements_context.md |
 | `presales breakdown-export <project>` | Convert breakdown.json → breakdown.xlsx |
 | `presales push <project>` | Create ADO work items from breakdown.json (with AC you provide) |
-| `presales validate <project> --figma-link <url>` | Fetch Figma screenshots + ADO stories → validation_bundle.json |
-| `presales enrich <project> --figma-link <url>` | Fetch Figma screenshots + ADO stories → enrichment_bundle.json |
-| `presales specs-upload <project>` | Upload spec files from output/specs/ to ADO tasks |
 
 ### What YOU do directly (analysis & generation):
+
+**Main pipeline:**
 | Task | What you do | Data source |
 |------|------------|-------------|
 | Discovery | Read requirements_context.md → generate overview.md + questions.txt | Local files |
 | Breakdown | Read overview + answers → generate breakdown.json | Local files |
-| Push AC | Generate user story text + lightweight AC → write push_ready.json → then run push script | Local files (breakdown.json) |
-| Validation | Read validation_bundle.json + screenshots → analyze with vision → report gaps | **ADO** + Figma screenshots |
-| Enrichment | Read enrichment_bundle.json + screenshots → generate detailed AC → update ADO | **ADO** + Figma screenshots |
+| Push AC | Generate user story text + detailed AC + technical context → write push_ready.json → then run push script | Local files (breakdown.json + overview + requirements) |
+| Extract design system | Read a few representative Figma screens via MCP → extract tokens and patterns → save design-system.md | Figma MCP |
+| Feature code | Fetch story from ADO → analyze target codebase + codebase-patterns.md + design-system.md → generate feature code + API contract → push branch → link in ADO | **ADO** + target codebase + codebase-patterns.md + design-system.md |
+
+**Invoked on request:**
+| Task | What you do | Data source |
+|------|------------|-------------|
+| Scan codebase | Scan developer-built reference implementations → extract conventions into codebase-patterns.md | Target codebase |
+| Generate tests | Read developer-edited feature code + AC from ADO → generate comprehensive tests → commit to feature branch | **ADO** + target codebase (feature branch) + codebase-patterns.md |
 | Change analysis | Read change request + fetch current ADO stories → analyze impact → update ADO | **ADO** (source of truth) |
-| Specs | Fetch ADO stories + designs → generate FE/BE YAML specs → save to output/specs/ | **ADO** (source of truth) |
-| Product document | Fetch all ADO stories → generate product_document.md → upload to ADO | **ADO** (source of truth) |
+| Product document | Fetch all ADO stories → generate Wiki pages in ADO | **ADO** (source of truth) |
 | Status | Read project.yaml → present status summary | Local files |
 
-**ADO is the single source of truth for all story data.** All downstream operations (validate, enrich, change requests, specs, product document) read from ADO — whether the stories were created by this pipeline or already existed. The only prerequisite is a working ADO connection with stories present. The `breakdown.json` is a temporary artifact used only when generating stories from scratch.
+**ADO is the single source of truth for all story data.** All downstream operations (change requests, feature code, product document) read from ADO — whether the stories were created by this pipeline or already existed. The only prerequisite is a working ADO connection with stories present. The `breakdown.json` is a temporary artifact used only when generating stories from scratch.
 
 ## Conversation Behavior
 
@@ -64,10 +75,10 @@ Before running any command, check if the inputs it depends on are stale:
 | discover | requirements_context.md | Was it re-ingested since last discover? |
 | breakdown | overview.md, answers/ | Was overview regenerated? Were new answers added? |
 | push | breakdown.json + push_ready.json | Was breakdown regenerated since last push? |
-| validate | ADO connection + Figma | Can we connect to ADO and find stories? |
-| enrich | ADO connection + Figma screenshots | Can we connect to ADO and find stories? |
+| design system | Figma file key in project.yaml | Is Figma configured? Has the file key changed? |
+| feature code | ADO connection + target codebase + codebase-patterns.md + design-system.md | Can we connect to ADO? Is the target codebase a git repo? Is codebase-patterns.md stale (>30 commits)? Does design-system.md exist? |
+| generate tests | ADO connection + target codebase (feature branch) + codebase-patterns.md | Can we connect to ADO? Does the feature branch exist? Is codebase-patterns.md stale? |
 | change | ADO connection | Can we connect to ADO and find stories? |
-| specs | ADO connection | Can we connect to ADO and find stories? |
 
 If stale, warn: "The [X] was generated before the latest [Y]. Running with outdated data may give inaccurate results. Want me to refresh [X] first?"
 
@@ -87,6 +98,8 @@ All projects live under `~/Downloads/presales-pipeline/projects/<ProjectName>/`.
 ```
 projects/<ProjectName>/
 ├── project.yaml          # Project config: ADO credentials, Figma credentials, state, changes
+├── design-system.md      # Extracted design tokens from Figma (optional)
+├── codebase-patterns.md  # Extracted conventions from target codebase (optional)
 ├── input/                # Raw requirement files (PDF, DOCX, XLSX, TXT, EML, images)
 ├── answers/              # Client answers to clarification questions
 ├── changes/              # Change request source files
@@ -98,14 +111,10 @@ projects/<ProjectName>/
 │   ├── breakdown.json
 │   ├── breakdown.xlsx
 │   ├── push_ready.json
-│   ├── product_document.md
-│   ├── validation_bundle.json
-│   ├── enrichment_bundle.json
+│   ├── product_overview.md
+│   ├── change_requests.md
 │   ├── ado_mapping.json
-│   ├── screenshots/      # Figma screen exports
-│   └── specs/
-│       ├── fe/           # Frontend specs (YAML)
-│       └── be/           # Backend specs (YAML)
+│   └── screenshots/      # Figma screen exports
 └── snapshots/            # Versioned snapshots before change requests
 ```
 
@@ -123,8 +132,7 @@ If the user doesn't specify a project name, check `projects/` for available proj
 
 ### MCP: figma (official, read-only)
 - Reads Figma design files via URL
-- Use for developer spec generation when you need specific node details
-- **For validation/enrichment, prefer screenshot-based approach** (faster, avoids token limits)
+- Use for design system extraction and feature code generation when you need specific node details
 
 ### MCP: ClaudeTalkToFigma (optional, read-write)
 - Creates and modifies designs in Figma via WebSocket
@@ -169,10 +177,12 @@ Epic → Feature → User Story → Tasks (FE/BE/DevOps)
 
 ### Tagging (MANDATORY)
 
-Every time you create or modify a User Story in ADO, apply the appropriate tag via `System.Tags`:
+Every time you create or modify a work item in ADO, apply **only** the appropriate Claude tag via `System.Tags`:
 
-- **`Claude New Story`** — when creating a brand-new User Story from scratch
-- **`Claude Modified Story`** — when updating an existing User Story (e.g. enriching AC, changing title, modifying effort)
+- **`Claude New Story`** / **`Claude New Feature`** / **`Claude New Epic`** — when creating a brand-new work item from scratch
+- **`Claude Modified Story`** / **`Claude Modified Feature`** / **`Claude Modified Epic`** — when updating an existing work item (e.g. enriching AC, changing title, modifying effort)
+
+**Do NOT add any other tags** (no `presales`, no project name, no epic/feature names). Only the Claude tags above.
 
 Tags are additive — preserve any existing tags on the work item. Use semicolons to separate multiple tags (e.g. `"Existing Tag; Claude Modified Story"`).
 
@@ -180,31 +190,115 @@ Tags are additive — preserve any existing tags on the work item. Use semicolon
 
 **Description field:**
 ```html
-<p><em>As a [role], I want to [action], so that [benefit].</em></p>
-
-<table>
-<tr><td><b>Epic</b></td><td>{epic name}</td></tr>
-<tr><td><b>Feature</b></td><td>{feature name}</td></tr>
-</table>
+As a [role],<br>I want to [action],<br>So that [benefit].
 ```
+Three lines separated by `<br>` only — no `<p>` wrapper, no extra newlines, no gaps between lines. The **Branch** link is added below the user story when feature code is generated (see skill 12, Step 9). Before code generation, the branch line is absent. Epic/Feature are visible through ADO hierarchy links.
 
 **Acceptance Criteria field** (`Microsoft.VSTS.Common.AcceptanceCriteria`):
 ```html
-<ol>
-<li>First grouped criterion — covers related behaviors in 1-3 sentences.</li>
-<li>Second grouped criterion.</li>
-<li>Third grouped criterion.</li>
-</ol>
+<b>AC 1:</b> Search behavior<br>
+<ul>
+<li>Search field is visible on the glossary page</li>
+<li>Filtering starts only after the user types at least 2 characters</li>
+<li>Results update as the user continues typing</li>
+</ul>
+
+<b>AC 2:</b> No results handling<br>
+<ul>
+<li>If no terms match the search, display "No results found" message</li>
+<li>The message disappears when the user modifies the search</li>
+</ul>
 ```
+
+Each AC group has a **bold numbered title** (`AC 1: Title`) followed by **bullet points** (`<ul><li>`) listing the specific criteria.
+
+**Change Log** is NOT added during initial story creation. The initial push generates detailed, dev-ready AC from the start — no enrichment step needed. The Change Log only appears when an actual **change request** or **scope revision** modifies a previously-completed story. See Modification Rules below for the format.
 
 **Effort field** (`Microsoft.VSTS.Scheduling.Effort`): total days across all disciplines.
 
 **Rules for AC:**
-- 4-7 grouped criteria, not more
-- Each covers a logical group of related behaviors
+- 4-7 AC groups, each with a short descriptive title
+- Each group covers a logical area of related behaviors
+- Bullet points within each group — specific, testable criteria
 - No Given/When/Then — write like developer notes
-- For enriched stories: reference specific UI elements from Figma designs
-- For lightweight stories: scope-level only, no implementation details
+- Reference specific UI elements from Figma designs when design context is available
+- Stories have detailed, dev-ready AC from the initial push — no enrichment step needed
+
+**Technical Context block** (appended after AC groups, separated by `<hr>`):
+
+A structured block consumed by Claude Code during feature code generation. It provides the information code gen needs to produce complete, working code without guessing. The push script renders it automatically from the `technical_context` field in push_ready.json.
+
+```html
+<hr>
+<b>Technical Context</b><br><br>
+<b>Data Model:</b><br>
+<ul>
+<li>Term: { id: UUID, name: string (required, max 100), description: string (optional), category: enum [General, Technical, Legal], createdAt: datetime, updatedBy: User }</li>
+</ul>
+<b>States:</b><br>
+<ul>
+<li>Default: table with paginated terms</li>
+<li>Loading: skeleton rows</li>
+<li>Empty: illustration + "No terms yet" + CTA to add first term</li>
+<li>Error: inline error banner with retry action</li>
+</ul>
+<b>Interactions:</b><br>
+<ul>
+<li>Click "Add Term" → modal opens → fill form → submit → table refreshes with new row</li>
+<li>Click row → navigate to /terms/{id}</li>
+<li>Type in search → 300ms debounce → GET /terms?q={query} → update table</li>
+</ul>
+<b>Navigation:</b><br>
+<ul>
+<li>Route: /glossary/terms</li>
+<li>Parent: Glossary section in sidebar</li>
+<li>Links to: /glossary/terms/{id} (detail), /glossary/categories (related)</li>
+</ul>
+<b>API Hints:</b><br>
+<ul>
+<li>GET /terms?q=&amp;page=&amp;sort=&amp;category= → { items: Term[], total: number }</li>
+<li>POST /terms → Term</li>
+<li>PATCH /terms/{id} → Term</li>
+<li>DELETE /terms/{id} → 204</li>
+</ul>
+```
+
+**Rules for Technical Context:**
+- **Data Model:** List each entity the story works with. Include field names, types, required/optional, constraints (max length, enums). Use inline object notation.
+- **States:** Every UI state the component can be in: default, loading, empty, error, success, search-active, etc. Brief description of what each looks like.
+- **Interactions:** Event → action chains. Include debounce, navigation, modal triggers, form submissions. Use → arrows for flow.
+- **Navigation:** Route path, parent layout/section, what pages link here, where this page links to.
+- **API Hints:** Endpoints this feature needs. Method + path + key query params → response shape. Don't design the full API — just hint at what the frontend expects.
+- **Omit sections that don't apply** (e.g., a pure backend story has no States or Navigation).
+- **Don't duplicate design-system.md** — no colors, fonts, spacing. Only functional/data context.
+
+### Modification Rules (MANDATORY — applies to ALL ADO updates)
+
+When modifying **any** existing User Story field (Description, Acceptance Criteria, or any other content field), follow these rules:
+
+**1. Never overwrite original text.** Show the old text with red strikethrough and the new text in green:
+```html
+<span style="color:red;text-decoration:line-through">old text being replaced</span>
+<span style="color:green">new text replacing it</span>
+```
+This applies to **any field** being changed — Description, Acceptance Criteria, or others. The reader must always be able to see what changed.
+
+**2. Add a Change Log only for change requests.** The Change Log lives at the **end of the Acceptance Criteria field**. It is **NOT added during initial story creation.** It only appears when an actual change request or scope revision modifies a story. When modifying a story via change request, append a Change Log section (if not already present) and add a numbered entry:
+```html
+<br><b>Change Log:</b><br><br>
+<b>Change {N}:</b> {what changed}<br>
+<b>Date:</b> {YYYY-MM-DD}<br>
+<b>Reason:</b> {why it changed}
+```
+Number entries sequentially (Change 1, Change 2, Change 3…). Separate entries with `<hr>`. New entries go at the **end** so the history reads chronologically. If the AC field doesn't yet have a Change Log (first modification), append one starting at Change 1.
+
+**2b. Always ask for a reason.** When a user requests a modification but does not provide a reason for the change, **ask them for one** before updating ADO. If the user says they don't know or want to skip, set the Reason to `Not specified`.
+
+**3. Outdated stories.** If a story becomes irrelevant after a change request or scope revision:
+- Add a visible warning at the top of the Description: `<p><b>⚠️ OUTDATED</b> — {reason why this story is no longer relevant}.</p>`
+- If a replacement story exists (or is being created), add an ADO link of type `System.LinkTypes.Related` or `System.LinkTypes.Dependency-Forward` (Successor) pointing to the new story
+- The new story should link back to the old one as well (`System.LinkTypes.Dependency-Reverse` / Predecessor)
+- Add a Change Log entry (next sequential number) to the AC field: "Marked outdated", Date, Reason = reason + reference to replacement story ID
 
 ### Tasks (MANDATORY child items under User Story)
 
@@ -218,6 +312,50 @@ When creating a User Story, **always** create discipline tasks as children:
 Link each Task to its parent User Story via `System.LinkTypes.Hierarchy-Reverse`.
 
 If effort values are not yet assigned, still create the tasks (with effort = 0) so the hierarchy is complete. Effort can be updated later during estimation.
+
+### Story Relations (MANDATORY)
+
+Every User Story should have its **inter-story relationships** identified and stored as ADO links. Relations are analyzed once during push (or when creating/modifying stories via change requests) and then consumed by code generation for context.
+
+**Two link types:**
+
+| Link Type | ADO Relation | Meaning | Code Gen Use |
+|-----------|-------------|---------|--------------|
+| **Predecessor** | `System.LinkTypes.Dependency-Reverse` | This story builds ON TOP OF another story's output. The predecessor's code is WHERE the new feature will be placed. | Read the predecessor's feature branch to understand the existing component structure, layout, and integration points. |
+| **Related (Similar)** | `System.LinkTypes.Related` | This story is structurally similar to another story — same pattern, different data/context. | Read the similar story's feature branch as a template for HOW to implement this feature. |
+
+**Examples:**
+- Story "Add filtering to Glossary table" → **Predecessor:** "Glossary Terms Table Grid" (the table already exists; filtering goes ON it)
+- Story "Add filtering to FAQ table" → **Related:** "Add filtering to Glossary table" (same filtering pattern, different page)
+- Story "Term Detail Page" → **Predecessor:** "Glossary Terms Table Grid" (row click navigates to detail; need to know the table's route and row structure)
+
+**When to create relations:**
+1. **During push (skill 05)** — after generating push_ready.json, analyze ALL stories for predecessor and similarity relationships. Add `predecessors` and `similar_stories` fields to each story. The push script creates the ADO links.
+2. **During change requests (skill 08)** — when creating new stories or modifying existing ones, always check for relations against all existing stories in ADO.
+3. **During any story creation/modification** — if you create or change a story for any reason, check if it has predecessors or similar stories.
+
+**Rules for identifying relations:**
+- **Predecessor:** Story A is a predecessor of Story B if Story B's feature physically lives inside or extends Story A's output. Ask: "Does this story modify or add to something that another story creates?" If yes, the other story is the predecessor.
+- **Related (Similar):** Story A is related to Story B if they follow the same UI pattern or implementation approach but on different data/pages. Ask: "Is there another story that does essentially the same thing but in a different context?" If yes, they are related.
+- **A story can have 0-N predecessors and 0-N related stories.** Most stories will have 0-1 predecessors and 0-2 related stories.
+- **Relations are bidirectional in ADO** — when you link A→B as predecessor, ADO automatically shows B→A as successor. When you link A↔B as related, both sides see it.
+- **Don't force relations.** If a story is truly standalone with no dependencies or similar patterns, leave it without relations.
+- **Prefer specificity.** Link to the most specific story, not the broadest. Link "Add filtering to Glossary table" to "Glossary Terms Table Grid" (specific), not to "Glossary Application" (too broad — that's the Epic).
+
+**ADO link format** (JSON patch for creating links on an existing work item):
+```json
+{
+  "op": "add",
+  "path": "/relations/-",
+  "value": {
+    "rel": "System.LinkTypes.Dependency-Reverse",
+    "url": "https://dev.azure.com/{org}/_apis/wit/workItems/{predecessorId}",
+    "attributes": { "comment": "Predecessor: feature builds on this story's output" }
+  }
+}
+```
+
+For Related links, use `"rel": "System.LinkTypes.Related"` with comment `"Similar: same pattern/approach as this story"`.
 
 ---
 
@@ -274,12 +412,51 @@ Before running `presales push`, generate this file with full story details:
             {
               "id": "US-001",
               "title": "Story Title",
-              "user_story": "As a [role], I want to [action], so that [benefit].",
+              "user_story": "As a [role],\nI want to [action],\nSo that [benefit].",
               "acceptance_criteria": [
-                "Brief AC 1 — defines scope",
-                "Brief AC 2",
-                "Brief AC 3"
+                {
+                  "title": "Search behavior",
+                  "items": [
+                    "Search field is visible on the page",
+                    "Filtering starts after 2 characters"
+                  ]
+                },
+                {
+                  "title": "No results handling",
+                  "items": [
+                    "Display 'No results found' message when no match"
+                  ]
+                }
               ],
+              "technical_context": {
+                "data_model": [
+                  "Term: { id: UUID, name: string (required, max 100), description: string (optional), category: enum [General, Technical, Legal] }"
+                ],
+                "states": [
+                  "Default: table with paginated terms",
+                  "Loading: skeleton rows",
+                  "Empty: 'No terms yet' message with CTA",
+                  "Error: inline error banner with retry"
+                ],
+                "interactions": [
+                  "Click 'Add Term' → modal opens → fill form → submit → table refreshes",
+                  "Type in search → 300ms debounce → GET /terms?q={query} → update table",
+                  "Click column header → toggle sort asc/desc"
+                ],
+                "navigation": [
+                  "Route: /glossary/terms",
+                  "Parent: Glossary section in sidebar",
+                  "Links to: /terms/{id} (detail)"
+                ],
+                "api_hints": [
+                  "GET /terms?q=&page=&sort= → { items: Term[], total: number }",
+                  "POST /terms → Term",
+                  "PATCH /terms/{id} → Term",
+                  "DELETE /terms/{id} → 204"
+                ]
+              },
+              "predecessors": ["US-003"],
+              "similar_stories": ["US-007"],
               "fe_days": 2,
               "be_days": 3,
               "devops_days": 0,
@@ -300,7 +477,7 @@ Before running `presales push`, generate this file with full story details:
 
 ## Important Rules
 
-1. **ADO is the single source of truth** — all downstream operations (validate, enrich, change requests, specs, product document) read from ADO, whether the stories were created by this pipeline or already existed. The only prerequisite is a working ADO connection. The breakdown is a temporary artifact used only when generating stories from scratch.
+1. **ADO is the single source of truth** — all downstream operations (change requests, feature code, product document) read from ADO, whether the stories were created by this pipeline or already existed. The only prerequisite is a working ADO connection. The breakdown is a temporary artifact used only when generating stories from scratch.
 2. **Always read project.yaml first** to understand the project state and credentials
 3. **Never hardcode credentials** — always read from project.yaml
 4. **Ask for missing info** — if you need a Figma link, project name, or clarification, ask in plain language
@@ -308,7 +485,7 @@ Before running `presales push`, generate this file with full story details:
 6. **Match existing format** — new stories should look identical to existing ones in ADO
 6b. **Enforce hierarchy** — every User Story must have a parent Feature, every Feature must have a parent Epic. Always check existing Epics/Features before creating new ones. Always create FE/BE tasks as children of User Stories.
 6c. **Tag every story change** — apply `Claude New Story` when creating, `Claude Modified Story` when updating existing stories. Never skip tagging.
-7. **Be incremental** — enrichment and validation can run multiple times as designs evolve
+7. **Be incremental** — code generation can run multiple times as stories evolve
 8. **Track changes** — every scope change gets logged in project.yaml and ADO Change Log
 9. **Snapshot before changes** — always create a snapshot before processing change requests
 10. **Always suggest next steps** — the user should never be left wondering what to do
@@ -317,3 +494,8 @@ Before running `presales push`, generate this file with full story details:
 13. **Guide, don't assume** — if the user seems unsure, offer the help overview
 14. **NEVER use raw curl** for ADO or Figma calls — always use Python modules
 15. **YOU do all reasoning** — never delegate analysis to a Python script. Python is for file I/O and API calls only.
+16. **Never overwrite original text in ADO** — when modifying any field, use red strikethrough for old content and green for new content. The original must always remain visible.
+17. **Change Log only on change requests** — stories do NOT get a Change Log during initial creation. The Change Log only appears when an actual change request or scope revision modifies a story. Each change request adds a sequentially numbered entry (Change 1, Change 2, …).
+17b. **Always ask for a reason** — when modifying a story, ask the user for the reason if they haven't provided one. Use "Not specified" only if the user explicitly declines.
+18. **Mark outdated stories clearly** — add `⚠️ OUTDATED` to Description, link to replacement, and log the change.
+19. **Always check story relations** — when creating or modifying any story, analyze predecessor (builds on top of) and similar (same pattern) relationships against all existing stories. Store as ADO links. Code generation reads these links to understand WHERE to place code and HOW to implement it.

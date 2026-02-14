@@ -1,5 +1,7 @@
 # Validate Designs Against Requirements
 
+> **OPTIONAL — STANDALONE SKILL.** This is NOT part of the standard pipeline flow. It is available for manual invocation when a user explicitly asks to compare Figma designs against ADO stories. Do NOT suggest this as a next step from other skills, and do NOT list it as a required pipeline stage.
+
 **Trigger:** "validate designs", "compare Figma with ADO", "check designs against requirements", "find gaps in designs"
 
 **Pre-checks:**
@@ -113,20 +115,36 @@ For stories that need AC updates:
 
 ## Step 6: On Approval — Update ADO
 
-1. **New stories:** Create in ADO using `core.ado`:
-   - User Story with description, AC, effort
-   - Discipline Tasks as children (FE/BE/DevOps where effort > 0)
-   - Tags: `presales;<ProjectName>;validation-gap`
-   - Link to appropriate Feature parent
+### New stories
+Create in ADO using `core.ado`:
+- User Story with description (user story text only), AC (no Change Log on creation), effort
+- Discipline Tasks as children (FE/BE/DevOps where effort > 0)
+- Tags: `Claude New Story` (no other tags)
+- Link to appropriate Feature parent
 
-2. **Modified stories:** Update AC and/or effort in ADO
+### Modified stories
+Update existing stories following the **Modification Rules**:
+- **Never overwrite** existing AC text. Use red strikethrough for old content, green for new:
+  ```html
+  <span style="color:red;text-decoration:line-through">old AC text</span>
+  <span style="color:green">new AC text from design validation</span>
+  ```
+- **Change Log:** Only add a Change Log entry if the modification is a **genuine scope change** (e.g., validation reveals the design contradicts the AC, or a feature works differently than specified). Do NOT add a Change Log for minor AC refinements or clarifications that don't change what the story delivers.
+- Add tag `Claude Modified Story` (preserve existing tags)
 
-3. Update `output/ado_mapping.json` with any new story IDs
+### Outdated stories
+If validation reveals a story is no longer relevant (e.g. the design shows a completely different approach):
+- Add `<p><b>⚠️ OUTDATED</b> — Design validation shows this functionality was replaced by [description].</p>` at the top of the Description
+- If a replacement story is being created, add an ADO link (`System.LinkTypes.Dependency-Forward`) to the new story, and link the new story back (`System.LinkTypes.Dependency-Reverse`)
+- Append a Change Log entry to the AC field (next sequential number): "Marked outdated", Reason = "Replaced by ADO #{new_id}"
+
+### Mapping update
+Update `output/ado_mapping.json` with any new story IDs
 
 ## Step 7: Next Steps
 
 Tell the user:
-"Validation is done. When you're ready to add detailed acceptance criteria based on the designs, say 'enrich stories'."
+"Validation is done. The report shows what matches, what's missing, and what conflicts between Figma and ADO."
 
 ## Step 8: Auto-update Product Document
 

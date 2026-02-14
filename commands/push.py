@@ -4,6 +4,11 @@ Reads pre-generated user stories and acceptance criteria from push_ready.json
 (generated in conversation before running this command).
 Falls back to breakdown.json if push_ready.json doesn't exist.
 Creates Epics → Features → User Stories (with discipline Tasks) in ADO.
+
+Reliability features:
+- Resume: loads existing ado_mapping.json and skips already-created items
+- Dedup: queries ADO for existing Epics/Features before creating new ones
+- Incremental save: writes ado_mapping.json after each story creation
 """
 
 import json
@@ -28,7 +33,9 @@ def run(proj: dict, dry_run: bool = False) -> None:
         return
     click.echo(f"  Source: {source_name}")
 
-    # Test ADO connection
+    # Test ADO connection and fetch existing items for dedup
+    config = None
+    existing_items = {"epics": {}, "features": {}}
     if not dry_run:
         try:
             config = ado_client.from_project(proj)
@@ -40,9 +47,21 @@ def run(proj: dict, dry_run: bool = False) -> None:
         if not ado_client.test_connection(config):
             click.secho("  ✗ Failed to connect to ADO. Check credentials.", fg="red")
             return
-        click.secho("  ✓ Connected to ADO\n", fg="green")
+        click.secho("  ✓ Connected to ADO", fg="green")
 
-    # Count totals
+        # Query existing Epics/Features to avoid creating duplicates
+        click.echo("  Checking for existing work items...")
+        existing_items = _fetch_existing_items(config)
+        e_count = len(existing_items["epics"])
+        f_count = len(existing_items["features"])
+        if e_count or f_count:
+            click.echo(f"    Found {e_count} epics, {f_count} features already in ADO")
+
+    # Load existing mapping for resume support (survives partial failures)
+    created = _load_existing_mapping(proj)
+    created_story_ids = {s["id"] for s in created.get("stories", [])}
+
+    # Count totals and determine what's already done
     total_stories = sum(
         len(feature.get("stories", []))
         for epic in push_data.get("epics", [])
@@ -51,13 +70,26 @@ def run(proj: dict, dry_run: bool = False) -> None:
     total_epics = len(push_data.get("epics", []))
     total_features = sum(len(e.get("features", [])) for e in push_data.get("epics", []))
 
-    click.echo(f"  Will create: {total_epics} epics, {total_features} features, {total_stories} stories")
+    skip_count = sum(
+        1 for epic in push_data.get("epics", [])
+        for feature in epic.get("features", [])
+        for story in feature.get("stories", [])
+        if story.get("id", "") in created_story_ids
+    )
+
+    click.echo(f"\n  Total: {total_epics} epics, {total_features} features, {total_stories} stories")
+    if skip_count:
+        click.secho(
+            f"  Resuming: {skip_count} stories already created, "
+            f"{total_stories - skip_count} remaining",
+            fg="yellow",
+        )
     if not dry_run and not click.confirm("  Proceed?", default=True):
         return
 
-    # Track created IDs for hierarchy
-    created = {"epics": {}, "features": {}, "stories": []}
+    # Main creation loop
     story_index = 0
+    new_story_count = 0
 
     for epic in push_data.get("epics", []):
         epic_name = epic.get("name", "Unknown Epic")
@@ -73,21 +105,28 @@ def run(proj: dict, dry_run: bool = False) -> None:
             + "</ul>"
         )
 
-        click.secho(f"  Epic: {epic_name}", fg="cyan", bold=True)
+        click.secho(f"\n  Epic: {epic_name}", fg="cyan", bold=True)
 
-        if dry_run:
+        # Resolve Epic: resume mapping → existing in ADO → create new
+        epic_ado_id = created["epics"].get(epic_id_key)
+        if epic_ado_id:
+            click.echo(f"    ↩ Reusing Epic #{epic_ado_id} (from previous run)")
+        elif dry_run:
             epic_ado_id = None
             click.echo(f"    [DRY RUN] Would create Epic: {epic_name}")
+        elif epic_name in existing_items["epics"]:
+            epic_ado_id = existing_items["epics"][epic_name]
+            created["epics"][epic_id_key] = epic_ado_id
+            click.echo(f"    ↩ Reusing existing ADO Epic #{epic_ado_id}")
         else:
             result = ado_client.create_work_item(
                 config, "Epic", epic_name,
                 description=epic_html,
-                tags=f"presales;{project_name}",
+                tags="Claude New Epic",
             )
             epic_ado_id = result.get("id")
+            created["epics"][epic_id_key] = epic_ado_id
             click.echo(f"    ✓ Created Epic #{epic_ado_id}")
-
-        created["epics"][epic_id_key] = epic_ado_id
 
         for feature in epic.get("features", []):
             feat_name = feature.get("name", "Unknown Feature")
@@ -103,31 +142,46 @@ def run(proj: dict, dry_run: bool = False) -> None:
 
             click.echo(f"    Feature: {feat_name}")
 
-            if dry_run:
+            # Resolve Feature: resume mapping → existing in ADO → create new
+            feat_ado_id = created["features"].get(feat_id_key)
+            if feat_ado_id:
+                click.echo(f"      ↩ Reusing Feature #{feat_ado_id} (from previous run)")
+            elif dry_run:
                 feat_ado_id = None
                 click.echo(f"      [DRY RUN] Would create Feature: {feat_name}")
+            elif feat_name in existing_items["features"]:
+                feat_ado_id = existing_items["features"][feat_name]
+                created["features"][feat_id_key] = feat_ado_id
+                click.echo(f"      ↩ Reusing existing ADO Feature #{feat_ado_id}")
             else:
                 result = ado_client.create_work_item(
                     config, "Feature", feat_name,
                     description=feat_html,
-                    tags=f"presales;{project_name};{epic_name}",
+                    tags="Claude New Feature",
                     parent_id=epic_ado_id,
                 )
                 feat_ado_id = result.get("id")
+                created["features"][feat_id_key] = feat_ado_id
                 click.echo(f"      ✓ Created Feature #{feat_ado_id}")
-
-            created["features"][feat_id_key] = feat_ado_id
 
             for story in feature.get("stories", []):
                 story_index += 1
                 story_title = story.get("title", "Unknown Story")
                 story_id = story.get("id", f"US-{story_index:03d}")
 
+                # Skip if already created (resume support)
+                if story_id in created_story_ids:
+                    click.echo(
+                        f"      [{story_index}/{total_stories}] "
+                        f"{story_title} — already created, skipping"
+                    )
+                    continue
+
                 click.echo(f"      [{story_index}/{total_stories}] {story_title}")
 
                 # Read user story and AC from push_ready.json fields;
                 # fallback: breakdown.json has acceptance_criteria as a string
-                user_story_text = story.get("user_story", f"As a user, I want to {story_title.lower()}.")
+                user_story_text = story.get("user_story", f"As a user,\nI want to {story_title.lower()},\nSo that I can accomplish this goal.")
                 ac_list = story.get("acceptance_criteria", [])
 
                 # Effort
@@ -140,7 +194,8 @@ def run(proj: dict, dry_run: bool = False) -> None:
                 description_html = _build_story_description(
                     user_story_text, epic_name, feat_name
                 )
-                ac_html = _build_ac_html(ac_list)
+                tech_ctx = story.get("technical_context", {})
+                ac_html = _build_ac_html(ac_list, tech_ctx)
 
                 if dry_run:
                     click.echo(f"        [DRY RUN] Would create User Story: {story_title}")
@@ -149,7 +204,7 @@ def run(proj: dict, dry_run: bool = False) -> None:
                     result = ado_client.create_work_item(
                         config, "User Story", story_title,
                         description=description_html,
-                        tags=f"presales;{project_name};{epic_name};{feat_name}",
+                        tags="Claude New Story",
                         parent_id=feat_ado_id,
                         extra_fields={
                             "Microsoft.VSTS.Scheduling.Effort": total,
@@ -169,11 +224,19 @@ def run(proj: dict, dry_run: bool = False) -> None:
                         "epic": epic_name,
                         "feature": feat_name,
                     })
+                    created_story_ids.add(story_id)
+                    new_story_count += 1
 
-    # Save mapping file
+                    # Save mapping incrementally — progress survives failures
+                    _save_mapping(proj, created)
+
+    # Final mapping save (captures Epic/Feature-only changes from reuse)
+    _save_mapping(proj, created)
     mapping_path = get_output_path(proj, "ado_mapping.json")
-    with open(mapping_path, "w", encoding="utf-8") as f:
-        json.dump(created, f, indent=2)
+
+    # Create story relation links (predecessors + similar stories)
+    if not dry_run:
+        _create_relation_links(config, push_data, created)
 
     # Update state
     if not dry_run:
@@ -181,10 +244,76 @@ def run(proj: dict, dry_run: bool = False) -> None:
         update_state(proj, ado_pushed=True)
 
     click.secho(f"\n  ✓ Push complete", fg="green", bold=True)
-    click.echo(f"    Created: {total_epics} epics, {total_features} features, {story_index} stories")
+    click.echo(f"    Created: {new_story_count} new stories")
+    if skip_count:
+        click.echo(f"    Skipped: {skip_count} already-created stories")
     click.echo(f"    Mapping: {mapping_path}")
-    click.echo(f"\n    When designs are ready, run: presales enrich {project_name} --figma-link <url>")
+    click.echo(f"\n    Next: extract design system from Figma or generate feature code.")
 
+
+# --- Resume and dedup helpers ---
+
+def _fetch_existing_items(config) -> dict:
+    """Fetch existing Epics and Features from ADO for duplicate detection.
+
+    Returns {"epics": {title: ado_id}, "features": {title: ado_id}}.
+    """
+    wiql = (
+        "SELECT [System.Id], [System.Title], [System.WorkItemType] "
+        "FROM WorkItems WHERE [System.WorkItemType] IN ('Epic', 'Feature') "
+        "AND [System.State] <> 'Removed' "
+        "ORDER BY [System.Id] ASC"
+    )
+    try:
+        items = ado_client.get_work_items_by_query(config, wiql)
+    except Exception as e:
+        click.secho(f"    ⚠ Could not query existing items: {e}", fg="yellow")
+        return {"epics": {}, "features": {}}
+
+    epics = {}
+    features = {}
+    for item in items:
+        fields = item.get("fields", {})
+        wit = fields.get("System.WorkItemType", "")
+        title = fields.get("System.Title", "")
+        ado_id = item.get("id")
+        if wit == "Epic":
+            epics[title] = ado_id
+        elif wit == "Feature":
+            features[title] = ado_id
+
+    return {"epics": epics, "features": features}
+
+
+def _load_existing_mapping(proj: dict) -> dict:
+    """Load existing ado_mapping.json for resume support.
+
+    If the file exists and is valid, returns its contents so the push
+    can skip already-created items. Otherwise returns an empty mapping.
+    """
+    mapping_path = get_output_path(proj, "ado_mapping.json")
+    if mapping_path.exists():
+        try:
+            with open(mapping_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            # Validate structure
+            if (isinstance(data.get("epics"), dict)
+                    and isinstance(data.get("features"), dict)
+                    and isinstance(data.get("stories"), list)):
+                return data
+        except (json.JSONDecodeError, KeyError):
+            pass
+    return {"epics": {}, "features": {}, "stories": []}
+
+
+def _save_mapping(proj: dict, created: dict) -> None:
+    """Save ado_mapping.json incrementally after each story creation."""
+    mapping_path = get_output_path(proj, "ado_mapping.json")
+    with open(mapping_path, "w", encoding="utf-8") as f:
+        json.dump(created, f, indent=2)
+
+
+# --- Task and relation helpers ---
 
 def _create_tasks(config, project_name: str, parent_id: int,
                    story_title: str, story: dict) -> None:
@@ -202,7 +331,7 @@ def _create_tasks(config, project_name: str, parent_id: int,
                 ado_client.create_work_item(
                     config, "Task", task_title,
                     parent_id=parent_id,
-                    tags=f"presales;{project_name}",
+                    tags="Claude New Story",
                     extra_fields={
                         "Microsoft.VSTS.Scheduling.Effort": days,
                     },
@@ -211,27 +340,147 @@ def _create_tasks(config, project_name: str, parent_id: int,
                 click.secho(f"          ⚠ Failed to create {prefix} task: {e}", fg="yellow")
 
 
+def _create_relation_links(config, push_data: dict, created: dict) -> None:
+    """Create predecessor and similar-story links between ADO work items.
+
+    Reads 'predecessors' and 'similar_stories' arrays from each story in
+    push_data, maps local IDs (e.g. US-001) to ADO IDs using the created
+    mapping, and creates the appropriate ADO links.
+    """
+    # Build local ID → ADO ID mapping
+    id_to_ado = {}
+    for story_info in created.get("stories", []):
+        id_to_ado[story_info["id"]] = story_info["ado_id"]
+
+    link_count = 0
+
+    for epic in push_data.get("epics", []):
+        for feature in epic.get("features", []):
+            for story in feature.get("stories", []):
+                story_local_id = story.get("id", "")
+                story_ado_id = id_to_ado.get(story_local_id)
+                if not story_ado_id:
+                    continue
+
+                # Predecessor links
+                for pred_id in story.get("predecessors", []):
+                    pred_ado_id = id_to_ado.get(pred_id)
+                    if pred_ado_id:
+                        try:
+                            ado_client.add_link(
+                                config, story_ado_id, pred_ado_id,
+                                "System.LinkTypes.Dependency-Reverse",
+                                comment="Predecessor: feature builds on this story's output",
+                            )
+                            link_count += 1
+                        except Exception as e:
+                            click.secho(
+                                f"    ⚠ Failed to link {story_local_id} → predecessor {pred_id}: {e}",
+                                fg="yellow",
+                            )
+
+                # Similar story links
+                for sim_id in story.get("similar_stories", []):
+                    sim_ado_id = id_to_ado.get(sim_id)
+                    if sim_ado_id:
+                        try:
+                            ado_client.add_link(
+                                config, story_ado_id, sim_ado_id,
+                                "System.LinkTypes.Related",
+                                comment="Similar: same pattern/approach as this story",
+                            )
+                            link_count += 1
+                        except Exception as e:
+                            click.secho(
+                                f"    ⚠ Failed to link {story_local_id} → similar {sim_id}: {e}",
+                                fg="yellow",
+                            )
+
+    if link_count > 0:
+        click.secho(f"    ✓ Created {link_count} story relation links", fg="green")
+
+
+# --- HTML builders ---
+
 def _build_story_description(user_story: str, epic: str, feature: str) -> str:
-    """Build HTML description — user story text + epic/feature table only."""
-    return f"""<p><em>{user_story}</em></p>
-
-<table>
-<tr><td><b>Epic</b></td><td>{epic}</td></tr>
-<tr><td><b>Feature</b></td><td>{feature}</td></tr>
-</table>""".strip()
+    """Build HTML description — user story text only, three lines, no italic."""
+    # Convert newlines to <br> for three-line display — no extra \n or <p> wrapper
+    # to avoid ADO rendering extra gaps between lines
+    html_text = user_story.replace("\n", "<br>")
+    return html_text
 
 
-def _build_ac_html(ac_list) -> str:
-    """Build HTML for acceptance criteria."""
+def _build_ac_html(ac_list, technical_context: dict | None = None) -> str:
+    """Build HTML for acceptance criteria + optional technical context block.
+
+    No Change Log is added on initial creation — it only appears
+    when the story is later modified (change request, scope revision, etc.).
+
+    Accepts two formats:
+    - New: list of dicts with 'title' and 'items' keys
+    - Legacy: list of strings or a single string
+    """
     if isinstance(ac_list, str):
-        return f"<p>{ac_list}</p>"
+        ac_html = f"<p>{ac_list}</p>"
+    elif isinstance(ac_list, list) and ac_list:
+        # New structured format: list of {title, items}
+        if isinstance(ac_list[0], dict):
+            parts = []
+            for i, group in enumerate(ac_list, 1):
+                title = group.get("title", f"Criterion {i}")
+                items_html = "".join(
+                    f"<li>{item}</li>" for item in group.get("items", [])
+                )
+                parts.append(
+                    f"<b>AC {i}:</b> {title}<br><ul>{items_html}</ul>"
+                )
+            ac_html = "".join(parts)
+        else:
+            # Legacy format: list of strings
+            parts = []
+            for i, ac in enumerate(ac_list, 1):
+                if ac:
+                    parts.append(f"<b>AC {i}:</b> {ac}<br><ul><li>{ac}</li></ul>")
+            ac_html = "".join(parts)
+    else:
+        ac_html = "<p>To be defined when designs are ready.</p>"
 
-    if isinstance(ac_list, list) and ac_list:
-        items = "".join(f"<li>{ac}</li>" for ac in ac_list if ac)
-        return f"<ol>{items}</ol>"
+    # Append technical context block if present
+    if technical_context:
+        ac_html += _build_technical_context_html(technical_context)
 
-    return "<p>To be defined when designs are ready.</p>"
+    return ac_html
 
+
+def _build_technical_context_html(ctx: dict) -> str:
+    """Build HTML for the Technical Context block appended after AC groups.
+
+    This structured block is consumed by Claude Code during feature code
+    generation. It provides data model, states, interactions, navigation,
+    and API hints so the generated code is complete from the start.
+    """
+    sections = [
+        ("Data Model", ctx.get("data_model", [])),
+        ("States", ctx.get("states", [])),
+        ("Interactions", ctx.get("interactions", [])),
+        ("Navigation", ctx.get("navigation", [])),
+        ("API Hints", ctx.get("api_hints", [])),
+    ]
+
+    # Skip if all sections are empty
+    if not any(items for _, items in sections):
+        return ""
+
+    parts = ['<hr><b>Technical Context</b><br><br>']
+    for title, items in sections:
+        if items:
+            items_html = "".join(f"<li>{item}</li>" for item in items)
+            parts.append(f"<b>{title}:</b><br><ul>{items_html}</ul>")
+
+    return "".join(parts)
+
+
+# --- Data loading ---
 
 def _load_data(proj: dict) -> tuple[dict | None, str]:
     """Load push_ready.json, falling back to breakdown.json."""

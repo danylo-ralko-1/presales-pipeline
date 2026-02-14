@@ -42,6 +42,9 @@ Compare the change request against the existing scope. Determine:
 - **Timeline impact**
 - **Risk assessment**
 - **Whether design updates are needed**
+- **Story relations** for any new stories:
+  - **Predecessors:** Which existing stories does the new story build on top of?
+  - **Similar stories:** Which existing stories follow the same pattern/approach?
 
 If the change is unclear, list specific questions for the client before proceeding.
 
@@ -61,6 +64,8 @@ Requires design update: yes/no
 New stories (N):
   + CR001-US-001: Story Title (Xd total)
     FE:Xd BE:Xd DevOps:Xd Design:Xd
+    Predecessor: #XXX (Story Title) — builds on this
+    Similar: #YYY (Story Title) — same pattern
 
 Modified stories (N):
   ~ US-XXX: Original Story Title
@@ -91,20 +96,50 @@ cp projects/<ProjectName>/output/*.md projects/<ProjectName>/snapshots/pre-CR-XX
 
 If stories are pushed to ADO (`state.ado_pushed: true`):
 
-1. **New stories:** Use `core.ado` to create work items in ADO:
-   - Create User Story with description, AC, effort, tags `change-request;CR-XXX`
-   - Create discipline Tasks as children (FE/BE/DevOps where effort > 0)
-   - Link to appropriate Feature parent
+### New stories
+Use `core.ado` to create work items in ADO:
+- Create User Story with description (user story text only), AC (no Change Log on creation), effort
+- Tags: `Claude New Story` (no other tags)
+- Create discipline Tasks as children (FE/BE/DevOps where effort > 0)
+- Link to appropriate Feature parent
+- **Analyze relations** — for each new story, check ALL existing stories in ADO for:
+  - **Predecessors:** Does this new story build on top of an existing story's output? If so, add a `System.LinkTypes.Dependency-Reverse` link.
+  - **Similar stories:** Is there an existing story that follows the same pattern? If so, add a `System.LinkTypes.Related` link.
+  - Use `core.ado.add_link()` to create the links after the story is created.
+  - Show proposed relations to the user as part of the approval step (Step 4).
 
-2. **Modified stories:** Update existing ADO items:
-   - Look up ADO ID from `output/ado_mapping.json`
-   - Update AC and effort fields
+### Modified stories
+Update existing ADO items following the **Modification Rules**:
+- Look up ADO ID from `output/ado_mapping.json`
+- **Never overwrite** existing content. Use red strikethrough for old, green for new:
+  ```html
+  <span style="color:red;text-decoration:line-through">old content</span>
+  <span style="color:green">new content from CR-XXX</span>
+  ```
+- This applies to **any field** being changed (AC, Description user story text, effort justification, etc.)
+- **Append a Change Log entry** to the end of the AC field:
+  ```html
+  <hr>
+  <b>Change {N}:</b> {what changed}<br>
+  <b>Date:</b> {YYYY-MM-DD}<br>
+  <b>Reason:</b> CR-XXX: {reason}
+  ```
+- **Ask the user for a reason** if they haven't provided one. Use "Not specified" only if they explicitly decline.
+- Add tag `Claude Modified Story` (preserve existing tags)
 
-3. **Change Log in ADO:**
-   - Find or create a "Change Log — <ProjectName>" Epic with tag `changelog;<ProjectName>`
-   - Create a Feature under it for this CR with full impact details in the description
-   - Update the Epic description with a running summary table of all CRs
-   - Save the Change Log Epic ID in `project.yaml` under `_changelog_epic_id`
+### Outdated stories
+If a change request makes an existing story irrelevant:
+- Add `<p><b>⚠️ OUTDATED</b> — Superseded by CR-XXX: {reason}.</p>` at the top of the Description
+- Add an ADO link (`System.LinkTypes.Dependency-Forward` / Successor) to the replacement story
+- The replacement story links back (`System.LinkTypes.Dependency-Reverse` / Predecessor)
+- Append a Change Log entry to the AC field (next sequential number): "Marked outdated", Reason = "CR-XXX — replaced by ADO #{new_id}"
+- Do NOT delete the old story — it must remain visible for audit trail
+
+### Change Log in ADO
+- Find or create a "Change Log — <ProjectName>" Epic with tag `changelog;<ProjectName>`
+- Create a Feature under it for this CR with full impact details in the description
+- Update the Epic description with a running summary table of all CRs
+- Save the Change Log Epic ID in `project.yaml` under `_changelog_epic_id`
 
 ## Step 7: Save Change Record
 
@@ -129,7 +164,9 @@ Update `project.yaml`:
 ## Step 8: Next Steps
 
 Tell the user:
-"Change request CR-XXX is processed. The new/modified stories are in ADO. If there are new screens needed, remind the designer and we can validate again once they're ready."
+"Change request CR-XXX is processed. The new/modified stories are in ADO. You can:
+1. **'generate code'** for any new or modified stories (includes API contract for backend)
+2. Process another change request if there are more"
 
 ## Step 9: Auto-update Product Document
 

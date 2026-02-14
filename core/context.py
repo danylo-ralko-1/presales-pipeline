@@ -15,9 +15,7 @@ DEPENDENCIES = {
     "push": [
         ("breakdown_generated", "Breakdown not generated. Generate it in conversation first."),
     ],
-    "enrich": [
-        ("ado_pushed", "Stories not pushed to ADO. Run: presales push"),
-    ],
+    "enrich": [],  # Deprecated — enrichment removed from pipeline
     "validate": [
         ("ado_pushed", "Stories not pushed to ADO. Run: presales push"),
     ],
@@ -29,13 +27,12 @@ DEPENDENCIES = {
 # Invalidation graph: when a command runs, which downstream state flags become stale
 INVALIDATION = {
     "ingest": [
-        "breakdown_generated", "ado_pushed", "enriched",
+        "breakdown_generated", "ado_pushed",
         "specs_generated", "validated",
     ],
     "push": [
-        "enriched", "specs_generated", "validated",
+        "specs_generated", "validated",
     ],
-    "enrich": [],
     "validate": [],
     "specs-upload": [],
     "breakdown-export": [],
@@ -73,12 +70,6 @@ def check_staleness(proj: dict) -> list[str]:
     if state.get("breakdown_generated") and not state.get("ado_pushed"):
         warnings.append(
             "Breakdown ready but not pushed to ADO. Run: presales push"
-        )
-
-    # Check if pushed but not enriched
-    if state.get("ado_pushed") and not state.get("enriched"):
-        warnings.append(
-            "Stories in ADO have lightweight AC. When designs are ready, run: presales enrich"
         )
 
     return warnings

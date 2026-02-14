@@ -84,7 +84,7 @@ def push_new_stories_to_ado(proj: dict, stories: list[dict]) -> list[dict]:
 
     for story in stories:
         title = story.get("title", "")
-        user_story_text = story.get("user_story", f"As a user, I want to {title.lower()}.")
+        user_story_text = story.get("user_story", f"As a user,\nI want to {title.lower()},\nSo that I can accomplish this goal.")
         ac_list = story.get("acceptance_criteria", [])
 
         fe = story.get("fe_days", 0)
@@ -96,17 +96,30 @@ def push_new_stories_to_ado(proj: dict, stories: list[dict]) -> list[dict]:
         cr_id = story.get("cr_id", "CR")
         epic = story.get("epic", "")
         feature = story.get("feature", "")
+        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
-        desc = (
-            f"<p><em>{user_story_text}</em></p>"
-            f"<table>"
-            f"<tr><td><b>Epic</b></td><td>{epic}</td></tr>"
-            f"<tr><td><b>Feature</b></td><td>{feature}</td></tr>"
-            f"<tr><td><b>Change Request</b></td><td>{cr_id}</td></tr>"
-            f"</table>"
+        # Three-line format, no italic
+        html_text = user_story_text.replace("\n", "<br>\n")
+        desc = f"<p>{html_text}</p>"
+
+        changelog = (
+            f"<br><b>Change Log:</b><br><br>"
+            f"<b>Change 1:</b> Story created<br>"
+            f"<b>Date:</b> {today}<br>"
+            f"<b>Reason:</b> {cr_id}"
         )
-
-        ac_html = "<ol>" + "".join(f"<li>{ac}</li>" for ac in ac_list) + "</ol>" if ac_list else ""
+        ac_parts = []
+        if ac_list:
+            for i, ac in enumerate(ac_list, 1):
+                if isinstance(ac, dict):
+                    title = ac.get("title", f"Criterion {i}")
+                    items_html = "".join(
+                        f"<li>{item}</li>" for item in ac.get("items", [])
+                    )
+                    ac_parts.append(f"<b>AC {i}:</b> {title}<br><ul>{items_html}</ul>")
+                else:
+                    ac_parts.append(f"<b>AC {i}:</b> {ac}<br><ul><li>{ac}</li></ul>")
+        ac_html = "".join(ac_parts) + changelog
 
         try:
             result = ado_client.create_work_item(

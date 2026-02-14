@@ -1,6 +1,6 @@
 # PreSales Pipeline
 
-An AI-powered pre-sales assistant that lives in your terminal. Just open Claude Code, describe what you need in plain English, and it handles requirements, Azure DevOps stories, Figma design validation, and technical specs for you.
+An AI-powered pre-sales assistant that lives in your terminal. Just open Claude Code, describe what you need in plain English, and it handles requirements, Azure DevOps stories, and feature code generation for you.
 
 **You don't need to memorize any commands.** Just chat with Claude like you would with a colleague.
 
@@ -42,25 +42,21 @@ Claude will create a structured breakdown with epics, features, stories, and eff
 
 Claude will create the full hierarchy in Azure DevOps — Epics, Features, User Stories with acceptance criteria, and FE/BE tasks — all properly linked.
 
-### Validating designs against requirements
+### Generating feature code
 
-> "Compare my ADO requirements with this Figma design and check if they match"
+> "Generate code for story #752"
 >
-> *paste your Figma link*
+> *provide the target codebase path*
 
-Claude will screenshot every Figma screen, read your ADO stories, and produce a validation report showing what matches, what's missing, and what conflicts.
+Claude will read the story from ADO, analyze your codebase's patterns and design system, generate working starter code, an API contract for the backend developer, and a review guide. It pushes everything as a feature branch and links it back in ADO. Frontend and backend developers check out the branch and start from a working baseline.
 
-### Enriching stories from designs
+### Extracting a design system
 
-> "Enrich the acceptance criteria for my stories using the Figma designs"
+> "Extract the design system from Figma"
+>
+> *provide 1-3 reference screen URLs*
 
-Claude will update each story's AC with specific UI details from the designs — without adding pixel-level specs.
-
-### Generating technical specs
-
-> "Generate YAML files with technical specifications for the FAQ page story"
-
-Claude will create detailed FE and BE spec files and can upload them directly to the ADO tasks.
+Claude will read the Figma designs via MCP and capture colors, typography, spacing, borders, shadows, and component patterns into a `design-system.md` file. This is used by the code generation skill to produce design-aware output.
 
 ### Handling change requests
 
@@ -108,6 +104,8 @@ That's it. Claude reads the `CLAUDE.md` instructions automatically and knows how
 
 ## What You Can Ask Claude To Do
 
+### Main Pipeline
+
 | What you want | Just say something like... |
 |---|---|
 | Set up a new project | "Create a new project called ClientName" |
@@ -116,13 +114,17 @@ That's it. Claude reads the `CLAUDE.md` instructions automatically and knows how
 | Break down into stories | "Generate a breakdown with estimates" |
 | Export to Excel | "Export the breakdown to an Excel file" |
 | Push stories to ADO | "Push these stories to Azure DevOps" |
-| Validate against Figma | "Compare ADO stories with this Figma link: ..." |
-| Enrich acceptance criteria | "Enrich the stories from the Figma designs" |
+| Generate feature code | "Generate code for story #752" *(produces frontend code + API contract + review guide)* |
 | Handle a change request | "Analyze this change request" *(drop file)* |
-| Generate tech specs | "Generate FE and BE specs for story #123" |
-| Upload specs to ADO | "Upload the specs to the ADO tasks" |
 | Generate product document | "Create a product document from all the ADO stories" |
 | Check project status | "What's the status of the Glossary project?" |
+
+### Standalone Tools
+
+| What you want | Just say something like... |
+|---|---|
+| Extract design system | "Extract the design system from Figma" *(provide screen URLs)* |
+| Validate designs vs ADO | "Compare ADO stories with this Figma link: ..." |
 
 ## Project Structure
 
@@ -134,6 +136,7 @@ presales-pipeline/
 ├── projects/             # Your project workspaces (gitignored)
 │   └── <ProjectName>/
 │       ├── project.yaml  # Config: ADO/Figma credentials, pipeline state
+│       ├── design-system.md  # Extracted design tokens (from Figma)
 │       ├── input/        # Drop your requirement files here
 │       ├── answers/      # Client answers to clarification questions
 │       ├── changes/      # Change request files
@@ -148,7 +151,7 @@ presales-pipeline/
 - Python 3.10+
 - [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code)
 - Azure DevOps account with a Personal Access Token
-- (Optional) Figma account with a Personal Access Token for design validation
+- (Optional) Figma account with a Personal Access Token for design system extraction
 
 ---
 
@@ -163,9 +166,7 @@ These are the Python commands that Claude runs behind the scenes. You don't need
 | `python3 presales ingest <project>` | Parse requirements from input files |
 | `python3 presales breakdown-export <project>` | Export breakdown to Excel |
 | `python3 presales push <project>` | Push stories to Azure DevOps |
-| `python3 presales validate <project> --figma-link <url>` | Compare Figma designs against ADO stories |
-| `python3 presales enrich <project> --figma-link <url>` | Enrich story AC from Figma designs |
-| `python3 presales specs-upload <project>` | Upload spec files to ADO tasks |
+| `python3 presales validate <project> --figma-link <url>` | *(Optional)* Compare Figma designs against ADO stories |
 | `python3 presales status <project>` | Show project status |
 | `python3 presales list` | List all projects |
 

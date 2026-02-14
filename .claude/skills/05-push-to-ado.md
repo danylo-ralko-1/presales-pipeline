@@ -13,37 +13,125 @@ This skill has TWO phases: you generate the story details, then the Python scrip
 
 ## Phase 1: Generate push_ready.json (YOU do this)
 
-Read `projects/<ProjectName>/output/breakdown.json` and `projects/<ProjectName>/output/overview.md`.
+Read `projects/<ProjectName>/output/breakdown.json`, `projects/<ProjectName>/output/overview.md`, `projects/<ProjectName>/output/requirements_context.md`, and any files in `projects/<ProjectName>/answers/`.
 
 For EVERY story in the breakdown, generate:
-- `user_story`: "As a [role], I want to [action], so that [benefit]."
-- `acceptance_criteria`: array of 2-4 brief scope-level AC strings
+- `user_story`: Three-line format — "As a [role],\nI want to [action],\nSo that [benefit]."
+- `acceptance_criteria`: array of detailed AC groups, each with a `title` and `items` (bullet points)
+- `technical_context`: structured block for Claude Code consumption during feature code generation (see format below)
 
 **Rules for user story text:**
-- Clear, specific "As a... I want to... so that..." format
+- Always three separate lines: "As a…", "I want to…", "So that…" — never a single inline sentence
+- No italic formatting — regular text only
 - The role should match the user roles identified in the overview
 - The action should describe what the user does, not how it's built
 - The benefit should tie to a business outcome
 
-**Rules for lightweight AC:**
-- 2-4 brief criteria per story — just enough to define SCOPE, not implementation
-- Focus on WHAT the story delivers, not HOW it should be built
-- No UI specifics (exact field names, button labels, error messages) — those come from Figma later
-- Keep each AC to 1 sentence
-- For backend/infra stories, be more specific since they don't depend on designs
+**Rules for detailed AC (dev-ready from initial push):**
+- 4-7 AC groups per story — detailed enough for a developer to implement without further clarification
+- Each group has a short descriptive title and 2-5 bullet points
+- Cover: user flows, logical behavior, validation rules, error handling, edge cases, permissions
+- Reference specific UI elements where inferable from requirements (field names, button labels, expected messages)
+- Include empty states, loading states, and error scenarios — these are real implementation work
+- No pixel-perfect details (font sizes, colors, spacing) — those come from design-system.md
+- For backend/infra stories: specify data constraints, API behavior, error codes, performance expectations
+
+**What to include (business requirements level):**
+- **User flows:** what the user does step by step, what happens on each action
+- **Logical behavior:** filtering logic, validation rules, state transitions
+- **Edge cases:** empty states, no results, concurrent access, boundary conditions
+- **Permissions:** which roles can do what, what happens when unauthorized
+- **Data behavior:** required vs optional fields, default values, cascading effects
+
+**What NOT to include (no pixel-perfect details):**
+- No font weights, font sizes, or font families
+- No exact pixel dimensions, padding, or margins
+- No RGB/hex color values
+- No CSS-level styling descriptions
+
+**Rules for technical_context:**
+- `data_model`: entities this story works with — field names, types, required/optional, constraints
+- `states`: all UI states — default, loading, empty, error, success, etc. Brief description of each.
+- `interactions`: event → action chains — click, type, submit, navigate. Use → arrows.
+- `navigation`: route path, parent layout, links in/out
+- `api_hints`: endpoints the frontend needs — method + path + params → response shape
+- Omit sections that don't apply (e.g., pure backend story has no `states` or `navigation`)
+- Don't include visual details (colors, fonts, spacing) — that's in design-system.md
 
 **Example:**
 ```json
 {
   "id": "US-003",
   "title": "User Login",
-  "user_story": "As a registered user, I want to log in with my email and password, so that I can access my dashboard.",
+  "user_story": "As a registered user,\nI want to log in with my email and password,\nSo that I can access my dashboard.",
   "acceptance_criteria": [
-    "Users can authenticate with email and password credentials.",
-    "Invalid credentials show an appropriate error message.",
-    "Successful login redirects to the user's dashboard.",
-    "Session persists across page refreshes until explicit logout."
+    {
+      "title": "Login form",
+      "items": [
+        "Email field (required) and password field (required, masked input)",
+        "Submit button is disabled until both fields have content",
+        "Form supports submission via Enter key"
+      ]
+    },
+    {
+      "title": "Authentication flow",
+      "items": [
+        "Valid credentials authenticate the user and redirect to /dashboard",
+        "Invalid credentials show an inline error message without clearing the form",
+        "Account locked after 5 consecutive failed attempts — show lockout message with retry timer"
+      ]
+    },
+    {
+      "title": "Session management",
+      "items": [
+        "Session persists across page refreshes until explicit logout or token expiry",
+        "Already-authenticated users visiting /login are redirected to /dashboard"
+      ]
+    },
+    {
+      "title": "Loading and error states",
+      "items": [
+        "Submit button shows loading indicator during authentication request",
+        "Network errors show a retry-able error message",
+        "Form inputs are disabled during the authentication request"
+      ]
+    },
+    {
+      "title": "Navigation",
+      "items": [
+        "'Forgot password?' link navigates to password reset flow",
+        "'Create account' link navigates to registration page"
+      ]
+    }
   ],
+  "technical_context": {
+    "data_model": [
+      "LoginCredentials: { email: string (required, valid email), password: string (required, min 8 chars) }",
+      "AuthSession: { token: JWT, user: User, expiresAt: datetime }"
+    ],
+    "states": [
+      "Default: login form with email and password fields",
+      "Loading: form disabled, submit button shows spinner",
+      "Error: inline error message above form (invalid credentials / network error)",
+      "Success: redirect to dashboard (no visible state)"
+    ],
+    "interactions": [
+      "Fill form → click 'Log In' → POST /auth/login → on success redirect to /dashboard",
+      "Invalid credentials → show error message → form stays filled → user can retry",
+      "Click 'Forgot Password' → navigate to /auth/forgot-password"
+    ],
+    "navigation": [
+      "Route: /auth/login",
+      "Public route (no auth required)",
+      "Redirect to /dashboard if already authenticated",
+      "Links to: /auth/forgot-password, /auth/register"
+    ],
+    "api_hints": [
+      "POST /auth/login { email, password } → { token, user }",
+      "POST /auth/refresh { token } → { token }",
+      "POST /auth/logout → 204"
+    ]
+  },
   "fe_days": 2,
   "be_days": 2,
   "devops_days": 0,
@@ -54,7 +142,82 @@ For EVERY story in the breakdown, generate:
 }
 ```
 
-Write the full structure to `projects/<ProjectName>/output/push_ready.json`. Same format as `breakdown.json` but with `user_story` and `acceptance_criteria` (as array) added to every story.
+Write the full structure to `projects/<ProjectName>/output/push_ready.json`. Same format as `breakdown.json` but with `user_story`, `acceptance_criteria` (detailed, as array of groups), and `technical_context` added to every story.
+
+**Why batches:** Generating detailed AC + technical context for all stories at once may hit token output limits on large projects (30+ stories). If so, generate push_ready.json in batches — write a partial file, continue appending. The JSON must be complete and valid before running the push script.
+
+## Phase 1b: Analyze Story Relations (YOU do this)
+
+After generating push_ready.json and before running the push script, analyze ALL stories for inter-story relationships. This is done once — the relations are stored in push_ready.json and the push script creates the ADO links.
+
+### What to analyze
+
+For each story in push_ready.json, determine:
+
+1. **Predecessors** — Does this story build ON TOP OF another story's output? Is there another story whose code is WHERE this feature will physically live?
+   - Example: "Add filtering to Glossary table" → predecessor is "Glossary Terms Table Grid" (the table must exist first; filtering is added to it)
+   - Example: "Term Detail Page" → predecessor is "Glossary Terms Table Grid" (clicking a row navigates to detail)
+   - Ask: "If a developer implements this story, do they need to modify or extend something that another story creates?"
+
+2. **Similar stories (Related)** — Is there another story that follows the same UI pattern or implementation approach but in a different context?
+   - Example: "FAQ search and filter" → similar to "Glossary search and filter" (same pattern: search bar + filter dropdowns + table, different data)
+   - Example: "Add Term modal" → similar to "Add FAQ modal" (same pattern: form in modal with validation)
+   - Ask: "Is there another story that a developer could copy-paste and adapt to implement this one?"
+
+### How to analyze
+
+Read through all stories in push_ready.json and cross-reference:
+- **Titles** — stories that reference the same page/feature are likely related
+- **AC content** — stories with similar AC patterns (search, filter, table, form, modal) are candidates for "similar"
+- **Technical Context** — stories sharing navigation routes (one links to another) indicate predecessor relationships
+- **Feature grouping** — stories under the same Feature are more likely to have predecessor relationships
+
+### Output
+
+Add two fields to each story in push_ready.json:
+
+```json
+{
+  "id": "US-005",
+  "title": "Filter Glossary by Data Set",
+  "predecessors": ["US-001"],
+  "similar_stories": ["US-008"],
+  ...
+}
+```
+
+- `predecessors`: array of story IDs (from the same push_ready.json) that this story builds on. Empty array `[]` if none.
+- `similar_stories`: array of story IDs that follow the same pattern. Empty array `[]` if none.
+
+**Use the local IDs** from push_ready.json (e.g., `US-001`). The push script maps these to ADO IDs after creation and creates the links.
+
+### Rules
+- Don't force relations — if a story is standalone, leave both arrays empty.
+- Prefer specificity — link to the most specific story, not to broad concepts.
+- Keep it practical — a story should have at most 1-2 predecessors and 1-2 similar stories. More than that dilutes the signal.
+- **Show the proposed relations to the user** before writing them:
+
+```
+Story Relations Analysis:
+
+US-001: Glossary Terms Table Grid
+  → No predecessors (standalone foundation)
+  → No similar stories
+
+US-003: Search and Filter Glossary
+  → Predecessor: US-001 (Glossary Terms Table Grid) — search/filter is placed on the table
+  → No similar stories
+
+US-005: Filter Glossary by Data Set
+  → Predecessor: US-001 (Glossary Terms Table Grid) — dropdown filter lives on the table
+  → Similar: US-006 (Filter FAQ by Category) — same filter dropdown pattern
+
+US-006: Filter FAQ by Category
+  → Predecessor: US-002 (FAQ Table Grid) — dropdown filter lives on the table
+  → Similar: US-005 (Filter Glossary by Data Set) — same filter dropdown pattern
+```
+
+**WAIT for approval before writing the relations into push_ready.json.**
 
 ## Phase 2: Push to ADO (Python script)
 
@@ -67,24 +230,48 @@ The script reads `push_ready.json` and creates the following hierarchy in ADO:
   - `[BE] <Story Title>` — if the story has backend effort > 0
   - `[DevOps] <Story Title>` — if the story has DevOps effort > 0
   - Design tasks are NOT created
+- **Story relation links** — after all stories are created, the script reads `predecessors` and `similar_stories` arrays, maps local IDs to ADO IDs, and creates:
+  - `System.LinkTypes.Dependency-Reverse` (Predecessor) links for each predecessor
+  - `System.LinkTypes.Related` links for each similar story
 
 **Story Description format** (the script builds this):
 ```html
-<p><em>As a [role], I want to [action], so that [benefit].</em></p>
-
-<table>
-<tr><td><b>Epic</b></td><td>{epic name}</td></tr>
-<tr><td><b>Feature</b></td><td>{feature name}</td></tr>
-</table>
+<p>As a [role],<br>
+I want to [action],<br>
+So that [benefit].</p>
 ```
+Three separate lines, no italic. Description contains only the user story statement.
 
-**AC format** (the script builds this from the array):
+**AC format** (the script builds this from the structured array — NO Change Log on creation):
 ```html
-<ol>
-<li>First AC</li>
-<li>Second AC</li>
-</ol>
+<b>AC 1:</b> Login form<br>
+<ul>
+<li>Email field (required) and password field (required, masked input)</li>
+<li>Submit button is disabled until both fields have content</li>
+<li>Form supports submission via Enter key</li>
+</ul>
+
+<b>AC 2:</b> Authentication flow<br>
+<ul>
+<li>Valid credentials authenticate the user and redirect to /dashboard</li>
+<li>Invalid credentials show an inline error message without clearing the form</li>
+<li>Account locked after 5 consecutive failed attempts</li>
+</ul>
+
+...additional AC groups...
+
+<hr>
+<b>Technical Context</b><br><br>
+<b>Data Model:</b><br>
+<ul><li>LoginCredentials: { email: string (required), password: string (required, min 8) }</li></ul>
+<b>States:</b><br>
+<ul><li>Default: form with email and password</li><li>Loading: submit disabled, spinner</li><li>Error: inline message</li></ul>
+...
 ```
+
+Each AC group gets a bold numbered title + bullet list. After the AC groups, the script appends a **Technical Context** block (separated by `<hr>`) with Data Model, States, Interactions, Navigation, and API Hints — structured information consumed by Claude Code during feature code generation.
+
+**No Change Log is added on initial creation.** The Change Log section only appears when a story is later modified by a change request or scope revision. At that point, a Change Log header is appended and entries are numbered sequentially (Change 1, Change 2, etc.) separated by `<hr>`.
 
 **Effort:** `Microsoft.VSTS.Scheduling.Effort` = total days (FE + BE + DevOps + Design)
 
@@ -95,7 +282,10 @@ The script saves `output/ado_mapping.json` mapping local IDs to ADO IDs. This ma
 After the script completes, report what was created (epics, features, stories, tasks).
 
 Tell the user:
-"Stories and tasks are in ADO with basic acceptance criteria. When your designer has Figma screens ready, say 'validate designs' and share the Figma link — I'll compare them against the stories and find any gaps."
+"Stories are in ADO with detailed acceptance criteria and technical context — they're ready for code generation. You can:
+1. **'extract design system'** — capture your Figma design tokens so generated code matches the designs
+2. **'generate code'** — scaffold feature code from a story into a feature branch (includes API contract for backend)
+3. **'handle a change request'** — if the client sends scope changes"
 
 ## Phase 4: Auto-update Product Document
 

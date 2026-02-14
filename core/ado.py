@@ -140,6 +140,46 @@ def update_work_item(
                         content_type="application/json-patch+json")
 
 
+def add_link(
+    config: AdoConfig,
+    source_id: int,
+    target_id: int,
+    link_type: str,
+    comment: str = "",
+) -> dict:
+    """
+    Add a relation link between two work items.
+
+    Args:
+        config: ADO connection config
+        source_id: ID of the work item to add the link to
+        target_id: ID of the work item to link to
+        link_type: ADO link type, e.g.:
+            - "System.LinkTypes.Dependency-Reverse" (Predecessor)
+            - "System.LinkTypes.Dependency-Forward" (Successor)
+            - "System.LinkTypes.Related" (Related)
+        comment: Optional comment describing the relationship
+
+    Returns:
+        Updated work item dict
+    """
+    url = f"{config.base_url}/wit/workitems/{source_id}?api-version={ADO_API_VERSION}"
+
+    link_value = {
+        "rel": link_type,
+        "url": f"https://dev.azure.com/{config.organization}/_apis/wit/workItems/{target_id}",
+    }
+    if comment:
+        link_value["attributes"] = {"comment": comment}
+
+    patches = [
+        {"op": "add", "path": "/relations/-", "value": link_value},
+    ]
+
+    return _api_request(config, url, method="PATCH", body=patches,
+                        content_type="application/json-patch+json")
+
+
 def get_work_items_by_query(config: AdoConfig, wiql: str) -> list[dict]:
     """
     Query work items using WIQL (Work Item Query Language).

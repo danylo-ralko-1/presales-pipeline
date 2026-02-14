@@ -11,14 +11,12 @@
    ✅ Overview & questions generated
    ✅ Breakdown created (32 stories, 145 days)
    ✅ Pushed to ADO (32 stories + tasks)
-   ⬜ Design validation — not done yet
-   ⬜ Story enrichment — waiting for validation
-   ⬜ Implementation specs — not generated yet
+   ⬜ Feature code — not generated yet
    ✅ Product document — last updated Feb 9
 
    Change requests: 2 processed
 
-   **Next step:** When Figma designs are ready, say 'validate designs' with the Figma link."
+   **Next step:** Say 'generate code for story #XXX' to scaffold a feature branch with frontend code, API contract, and review guide."
 
 2. Include staleness warnings if any artifacts are out of date.
 3. Always suggest the logical next action.
