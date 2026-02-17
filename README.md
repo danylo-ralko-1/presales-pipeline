@@ -1,6 +1,6 @@
 # PreSales Pipeline
 
-An AI-powered pre-sales assistant that lives in your terminal. Just open Claude Code, describe what you need in plain English, and it handles requirements, Azure DevOps stories, and feature code generation for you.
+An AI-powered pre-sales assistant that lives in your terminal. Open Claude Code, describe what you need in plain English, and it handles requirements analysis, Azure DevOps stories, product documentation, and feature code generation for you.
 
 **You don't need to memorize any commands.** Just chat with Claude like you would with a colleague.
 
@@ -34,37 +34,33 @@ Claude will save the files, parse them, extract the requirements, and generate a
 
 > "Break down these requirements into user stories with estimates"
 
-Claude will create a structured breakdown with epics, features, stories, and effort estimates (FE/BE/DevOps/Design).
+Claude will create a structured breakdown with epics, features, stories, and effort estimates (FE/BE/DevOps/Design) — grouped by domain, ordered by development sequence.
 
 ### Pushing to Azure DevOps
 
 > "Push these stories to ADO"
 
-Claude will create the full hierarchy in Azure DevOps — Epics, Features, User Stories with acceptance criteria, and FE/BE tasks — all properly linked.
+Claude will create the full hierarchy in Azure DevOps — Epics, Features, User Stories with detailed acceptance criteria and technical context, FE/BE/DevOps tasks — all properly linked. It also creates an Azure Repository and generates Product Overview and Change Requests wiki pages automatically.
 
 ### Generating feature code
 
-> "Generate code for story #752"
->
-> *provide the target codebase path*
+> "Generate code for story #1464"
 
-Claude will read the story from ADO, analyze your codebase's patterns and design system, generate working starter code, an API contract for the backend developer, and a review guide. It pushes everything as a feature branch and links it back in ADO. Frontend and backend developers check out the branch and start from a working baseline.
-
-### Extracting a design system
-
-> "Extract the design system from Figma"
->
-> *provide 1-3 reference screen URLs*
-
-Claude will read the Figma designs via MCP and capture colors, typography, spacing, borders, shadows, and component patterns into a `design-system.md` file. This is used by the code generation skill to produce design-aware output.
+Claude will read the story from ADO, check predecessor and related story branches for context, analyze the shared design system, generate working starter code using shadcn/ui components, push it as a feature branch, and link the branch back to the ADO story. Frontend and backend developers check out the branch and start from a working baseline.
 
 ### Handling change requests
 
-> "I got a change request from the client — they want to add a new filter. Here's the document."
+> "I got a change request from the client — they want to add a new filter."
 >
 > *drop the file into chat*
 
-Claude will analyze the impact, identify affected stories, and propose updates to ADO.
+Claude will analyze the impact, identify affected stories, create a CR work item in ADO, update affected stories with red/green markup showing what changed, and update the Change Requests wiki page.
+
+### Generating product documentation
+
+> "Create a product overview from the ADO stories"
+
+Claude will fetch all stories from ADO and generate wiki pages covering vision, problem statement, solution summary, user roles, key functional areas, data model overview, and technical environment.
 
 ## One-Time Setup
 
@@ -77,22 +73,11 @@ pip install pyyaml click openpyxl requests python-docx pdfplumber
 chmod +x presales
 ```
 
-### 2. Add your credentials
+### 2. Install MCP dependencies (optional, for ADO MCP server)
 
 ```bash
-cp .env.example .env
+pip install -r requirements-mcp.txt
 ```
-
-Open `.env` and paste your tokens:
-
-```
-ADO_PAT=your_azure_devops_pat_here
-FIGMA_PAT=your_figma_personal_access_token_here
-```
-
-**Where to get them:**
-- **ADO PAT:** dev.azure.com → User Settings → Personal Access Tokens (needs Work Items read/write)
-- **Figma PAT:** figma.com → Settings → Personal Access Tokens
 
 ### 3. Start chatting
 
@@ -100,7 +85,9 @@ FIGMA_PAT=your_figma_personal_access_token_here
 claude
 ```
 
-That's it. Claude reads the `CLAUDE.md` instructions automatically and knows how the pipeline works. Just tell it what you need.
+That's it. Claude reads the `CLAUDE.md` instructions automatically and knows how the pipeline works. Credentials (ADO PAT) are configured per-project in `project.yaml` when you create a new project — Claude will ask you for them.
+
+**Where to get your ADO PAT:** dev.azure.com → User Settings → Personal Access Tokens (needs Work Items read/write, Code read/write, Wiki read/write)
 
 ## What You Can Ask Claude To Do
 
@@ -114,17 +101,24 @@ That's it. Claude reads the `CLAUDE.md` instructions automatically and knows how
 | Break down into stories | "Generate a breakdown with estimates" |
 | Export to Excel | "Export the breakdown to an Excel file" |
 | Push stories to ADO | "Push these stories to Azure DevOps" |
-| Generate feature code | "Generate code for story #752" *(produces frontend code + API contract + review guide)* |
+| Generate product documentation | "Create a product overview from the ADO stories" |
+| Generate feature code | "Generate code for story #1464" |
+| Scan codebase patterns | "Scan the codebase and extract conventions" |
 | Handle a change request | "Analyze this change request" *(drop file)* |
-| Generate product document | "Create a product document from all the ADO stories" |
 | Check project status | "What's the status of the Glossary project?" |
 
-### Standalone Tools
+## Pipeline Flow
 
-| What you want | Just say something like... |
-|---|---|
-| Extract design system | "Extract the design system from Figma" *(provide screen URLs)* |
-| Validate designs vs ADO | "Compare ADO stories with this Figma link: ..." |
+```
+Ingest requirements → Breakdown into stories → Push to ADO + Generate wiki pages → Generate feature code
+```
+
+Each step builds on the previous one. ADO becomes the single source of truth once stories are pushed — all downstream operations (change requests, feature code, product docs) read from ADO.
+
+Optionally, if the target repo already has code:
+```
+→ Scan existing codebase for patterns (improves code generation accuracy)
+```
 
 ## Project Structure
 
@@ -133,16 +127,17 @@ presales-pipeline/
 ├── presales              # CLI entrypoint (used by Claude behind the scenes)
 ├── commands/             # Pipeline command implementations
 ├── core/                 # Config, ADO client, parser, context
+├── ado_mcp/              # ADO MCP server for work item management
+├── design-system.md      # Shared shadcn/ui component catalog (used by all projects)
 ├── projects/             # Your project workspaces (gitignored)
 │   └── <ProjectName>/
-│       ├── project.yaml  # Config: ADO/Figma credentials, pipeline state
-│       ├── design-system.md  # Extracted design tokens (from Figma)
+│       ├── project.yaml  # Config: ADO credentials, pipeline state
+│       ├── codebase-patterns.md  # Extracted conventions from target codebase (optional)
 │       ├── input/        # Drop your requirement files here
 │       ├── answers/      # Client answers to clarification questions
 │       ├── changes/      # Change request files
 │       ├── output/       # Everything Claude generates
 │       └── snapshots/    # Auto-snapshots before change requests
-├── .env                  # Your credentials (gitignored)
 └── CLAUDE.md             # Instructions Claude follows automatically
 ```
 
@@ -151,7 +146,6 @@ presales-pipeline/
 - Python 3.10+
 - [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code)
 - Azure DevOps account with a Personal Access Token
-- (Optional) Figma account with a Personal Access Token for design system extraction
 
 ---
 
@@ -166,7 +160,6 @@ These are the Python commands that Claude runs behind the scenes. You don't need
 | `python3 presales ingest <project>` | Parse requirements from input files |
 | `python3 presales breakdown-export <project>` | Export breakdown to Excel |
 | `python3 presales push <project>` | Push stories to Azure DevOps |
-| `python3 presales validate <project> --figma-link <url>` | *(Optional)* Compare Figma designs against ADO stories |
 | `python3 presales status <project>` | Show project status |
 | `python3 presales list` | List all projects |
 
