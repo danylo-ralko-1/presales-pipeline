@@ -102,7 +102,7 @@ If stories are pushed to ADO (`state.ado_pushed: true`):
 Use `core.ado` to create work items in ADO:
 - Create User Story with description (user story text only), AC (no Change Log on creation), effort
 - Tags: `Claude New Story` (no other tags)
-- Create discipline Tasks as children (FE/BE/DevOps where effort > 0)
+- Create discipline Tasks as children (FE/BE/DevOps where effort > 0, plus [QA][TD] and [QA][TE] placeholders for testable stories)
 - Link to appropriate Feature parent
 - **Analyze relations** — for each new story, check ALL existing stories in ADO for:
   - **Predecessors:** Does this new story build on top of an existing story's output? If so, add a `System.LinkTypes.Dependency-Reverse` link.

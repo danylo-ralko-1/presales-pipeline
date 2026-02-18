@@ -333,7 +333,7 @@ def _save_mapping(proj: dict, created: dict) -> None:
 
 def _create_tasks(config, project_name: str, parent_id: int,
                    story_title: str, story: dict) -> None:
-    """Create FE / BE / DevOps tasks as children of the user story."""
+    """Create FE / BE / DevOps / QA tasks as children of the user story."""
     disciplines = [
         ("fe_days", "FE"),
         ("be_days", "BE"),
@@ -354,6 +354,20 @@ def _create_tasks(config, project_name: str, parent_id: int,
                 )
             except Exception as e:
                 click.secho(f"          ⚠ Failed to create {prefix} task: {e}", fg="yellow")
+
+    # QA tasks — only for testable stories (skip_qa flag set by Claude
+    # during story generation for purely technical stories with no end-user impact)
+    if not story.get("skip_qa", False):
+        for qa_suffix in ("[QA][TD]", "[QA][TE]"):
+            task_title = f"{qa_suffix} {story_title}"
+            try:
+                ado_client.create_work_item(
+                    config, "Task", task_title,
+                    parent_id=parent_id,
+                    tags="Claude New Story",
+                )
+            except Exception as e:
+                click.secho(f"          ⚠ Failed to create {qa_suffix} task: {e}", fg="yellow")
 
 
 def _create_relation_links(config, push_data: dict, created: dict) -> None:

@@ -173,7 +173,7 @@ Located in `~/Downloads/presales-pipeline/`. Run with `python3 presales <command
 - **AC format:** 4-7 numbered groups (`AC 1: Title`) with bullet points. Dev-ready from initial push.
 - **Technical Context:** Data Model, States, Interactions, Navigation, API Hints — appended after AC, separated by `<hr>`.
 - **Modifications:** Never overwrite — use red strikethrough + green replacement. Change Log only on change requests.
-- **Tasks:** Always create FE/BE/DevOps child tasks under each User Story.
+- **Tasks:** Always create FE/BE/DevOps child tasks under each User Story. QA tasks (`[QA][TD]` and `[QA][TE]`) are auto-created for testable stories (skipped for pure infra/technical).
 - **Relations:** Analyze predecessor (builds on) and similar (same pattern) links for every story.
 
 ## JSON Schemas
@@ -190,7 +190,7 @@ Located in `~/Downloads/presales-pipeline/`. Run with `python3 presales <command
 4. **Ask for missing info** — if you need a project name or clarification, ask in plain language
 5. **Wait for approval** before modifying ADO — always show proposed changes first
 6. **Match existing format** — new stories should look identical to existing ones in ADO
-6b. **Enforce hierarchy** — every User Story must have a parent Feature, every Feature must have a parent Epic. Always check existing Epics/Features before creating new ones. Always create FE/BE tasks as children of User Stories.
+6b. **Enforce hierarchy** — every User Story must have a parent Feature, every Feature must have a parent Epic. Always check existing Epics/Features before creating new ones. Always create FE/BE/QA tasks as children of User Stories.
 6c. **Tag every story change** — apply `Claude New Story` when creating, `Claude Modified Story` when updating existing stories. Never skip tagging.
 7. **Be incremental** — code generation can run multiple times as stories evolve
 8. **Track changes** — every scope change gets logged in project.yaml and ADO Change Log

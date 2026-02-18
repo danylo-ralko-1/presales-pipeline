@@ -242,6 +242,9 @@ The script reads `push_ready.json` and creates the following hierarchy in ADO:
   - `[FE] <Story Title>` — if the story has frontend effort > 0
   - `[BE] <Story Title>` — if the story has backend effort > 0
   - `[DevOps] <Story Title>` — if the story has DevOps effort > 0
+  - `[QA][TD] <Story Title>` — Test Design placeholder (no effort, no description)
+  - `[QA][TE] <Story Title>` — Test Execution placeholder (no effort, no description)
+  - QA tasks are skipped when the story has `skip_qa: true` (set by Claude for purely technical stories with no end-user impact)
   - Design tasks are NOT created
 - **Story relation links** — after all stories are created, the script reads `predecessors` and `similar_stories` arrays, maps local IDs to ADO IDs, and creates:
   - `System.LinkTypes.Dependency-Reverse` (Predecessor) links for each predecessor

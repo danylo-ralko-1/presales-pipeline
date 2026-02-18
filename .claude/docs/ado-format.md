@@ -152,8 +152,12 @@ When creating a User Story, **always** create discipline tasks as children:
 - **Backend:** Title = `[BE] <User Story Title>`, Effort = be_days — create if the story has any backend work (API, database, integrations, server-side logic)
 - **DevOps:** Title = `[DevOps] <User Story Title>`, Effort = devops_days — create only if explicit DevOps work is needed
 - **Design tasks are NOT created**
+- **QA Test Design:** Title = `[QA][TD] <User Story Title>`, no effort, no description — placeholder for QA planning
+- **QA Test Execution:** Title = `[QA][TE] <User Story Title>`, no effort, no description — placeholder for QA execution
 
 Link each Task to its parent User Story via `System.LinkTypes.Hierarchy-Reverse`.
+
+**QA tasks are only created for testable stories** — stories with user-facing functionality, business logic changes, or behavioral changes that a QA specialist can verify. They are **skipped** for purely technical stories that have no end-user impact (e.g., environment setup, CI/CD pipeline, database migrations). Claude sets `skip_qa: true` on such stories during generation; the push script reads this flag.
 
 If effort values are not yet assigned, still create the tasks (with effort = 0) so the hierarchy is complete. Effort can be updated later during estimation.
 
