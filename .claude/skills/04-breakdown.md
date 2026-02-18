@@ -1,5 +1,7 @@
 # Generate Breakdown & Estimates
 
+**Reference docs:** Read `.claude/docs/json-schemas.md` for the exact `breakdown.json` format before writing.
+
 **Trigger:** "create breakdown", "estimate the project", "generate stories", or when the user drops client answers and says something like "here are the answers, create the breakdown"
 
 **Pre-checks:**

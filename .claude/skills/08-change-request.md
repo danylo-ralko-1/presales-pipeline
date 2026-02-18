@@ -1,5 +1,7 @@
 # Process Change Request
 
+**Reference docs:** Read `.claude/docs/ado-format.md` for modification rules, red/green markup, and Change Log format before updating stories.
+
 **Trigger:** "change request", "client wants to change", "scope change", "the client sent this email", or when the user drops a file and mentions it's a change/update from the client
 
 **Pre-checks:**

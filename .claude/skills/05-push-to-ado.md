@@ -1,5 +1,7 @@
 # Push to ADO
 
+**Reference docs:** Read `.claude/docs/ado-format.md` for ADO HTML format and `.claude/docs/json-schemas.md` for the `push_ready.json` schema before starting.
+
 **Trigger:** "push to ADO", "create work items", "push stories"
 
 **Pre-checks:**

@@ -1,5 +1,7 @@
 # Generate Feature Code
 
+**Reference docs:** Read `.claude/docs/ado-format.md` for story format (AC, Technical Context, relations) when reading stories from ADO.
+
 **Trigger:** "generate code", "scaffold feature", "create feature branch", "generate feature code", "code from story"
 
 **Pre-checks:**
