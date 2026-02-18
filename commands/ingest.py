@@ -10,7 +10,7 @@ from core.config import (
 from core.context import compute_input_hash, invalidate_downstream
 from core.parser import (
     parse_directory, build_context, build_section_index, estimate_tokens,
-    ParsedFile, CONTEXT_CHAR_THRESHOLD,
+    compute_file_hash, ParsedFile, CONTEXT_CHAR_THRESHOLD,
 )
 
 
@@ -64,6 +64,22 @@ def run(proj: dict) -> None:
         click.secho("\n  ✗ No content extracted from any file", fg="red")
         return
 
+    # Detect per-file changes against previous manifest
+    prev_hashes = _load_previous_hashes(proj)
+    file_changes = _detect_changes(parsed, prev_hashes)
+    new_files = [f for f, status in file_changes.items() if status == "new"]
+    changed_files = [f for f, status in file_changes.items() if status == "changed"]
+    removed_files = [f for f in prev_hashes if f not in file_changes]
+
+    if prev_hashes and (new_files or changed_files or removed_files):
+        click.secho(f"\n  Changes since last ingest:", fg="cyan")
+        for f in new_files:
+            click.echo(f"    + {f} (new)")
+        for f in changed_files:
+            click.echo(f"    ~ {f} (changed)")
+        for f in removed_files:
+            click.echo(f"    - {f} (removed)")
+
     # Save requirements context (text) — always written regardless of strategy
     ctx_path = get_output_path(proj, "requirements_context.md")
     ctx_path.parent.mkdir(parents=True, exist_ok=True)
@@ -89,7 +105,7 @@ def run(proj: dict) -> None:
     # Save manifest (metadata about what was parsed)
     manifest = {
         "project": project_name,
-        "files": [_file_manifest(pf) for pf in parsed],
+        "files": [_file_manifest(pf, file_changes.get(pf.filename, "new")) for pf in parsed],
         "summary": {
             "total_files": len(parsed),
             "successful": len(success),
@@ -99,6 +115,9 @@ def run(proj: dict) -> None:
             "total_text_chars": total_chars,
             "estimated_tokens": est_tokens,
             "context_strategy": context_strategy,
+            "new_files": new_files,
+            "changed_files": changed_files,
+            "removed_files": removed_files,
         },
     }
     if sections_index:
@@ -165,12 +184,13 @@ def _human_size(n: int) -> str:
         return f"{n/(1024*1024):.1f} MB"
 
 
-def _file_manifest(pf: ParsedFile) -> dict:
+def _file_manifest(pf: ParsedFile, change_status: str = "new") -> dict:
     """Create manifest entry for a parsed file."""
     entry = {
         "filename": pf.filename,
         "format": pf.format,
         "status": "error" if pf.error else "ok",
+        "change": change_status,
     }
     if pf.error:
         entry["error"] = pf.error
@@ -181,5 +201,39 @@ def _file_manifest(pf: ParsedFile) -> dict:
         entry["type"] = "text"
         entry["text_length"] = len(pf.text)
         entry["estimated_tokens"] = estimate_tokens(pf.text)
+        entry["content_hash"] = compute_file_hash(pf.text)
     entry.update({k: v for k, v in pf.metadata.items()})
     return entry
+
+
+def _load_previous_hashes(proj: dict) -> dict[str, str]:
+    """Load per-file content hashes from previous manifest (if exists)."""
+    manifest_path = get_output_path(proj, "requirements_manifest.json")
+    if not manifest_path.exists():
+        return {}
+    try:
+        with open(manifest_path, "r") as f:
+            prev = json.load(f)
+        return {
+            entry["filename"]: entry["content_hash"]
+            for entry in prev.get("files", [])
+            if "content_hash" in entry
+        }
+    except (json.JSONDecodeError, KeyError):
+        return {}
+
+
+def _detect_changes(parsed: list[ParsedFile], prev_hashes: dict[str, str]) -> dict[str, str]:
+    """Compare current files against previous hashes. Returns {filename: 'new'|'changed'|'unchanged'}."""
+    changes = {}
+    for pf in parsed:
+        if pf.error or pf.is_image:
+            continue
+        current_hash = compute_file_hash(pf.text)
+        if pf.filename not in prev_hashes:
+            changes[pf.filename] = "new"
+        elif prev_hashes[pf.filename] != current_hash:
+            changes[pf.filename] = "changed"
+        else:
+            changes[pf.filename] = "unchanged"
+    return changes

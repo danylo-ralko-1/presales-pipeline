@@ -13,6 +13,7 @@ Supported formats:
 import csv
 import email
 import base64
+import hashlib
 import mimetypes
 from pathlib import Path
 from dataclasses import dataclass, field
@@ -373,6 +374,11 @@ def _parse_image(filepath: Path) -> ParsedFile:
 def estimate_tokens(text: str) -> int:
     """Rough token estimate: ~4 characters per token."""
     return len(text) // 4
+
+
+def compute_file_hash(text: str) -> str:
+    """Short content hash for change detection between ingests."""
+    return hashlib.md5(text.encode("utf-8")).hexdigest()[:12]
 
 
 def build_section_index(text_context: str, parsed_files: list[ParsedFile]) -> list[dict]:

@@ -65,6 +65,8 @@ The manifest (`requirements_manifest.json`) includes `summary.context_strategy`:
 
 **After discovery, `overview.md` is always the primary source** — regardless of strategy. It contains the synthesized scope plus a **Source Reference** table mapping topics to source files. Downstream skills (breakdown, push) read the overview first, then use the Source Reference + manifest line offsets to do **targeted reads** of only the relevant section within `requirements_context.md` — never the full file again.
 
+**Incremental discovery:** Ingest tracks per-file content hashes. When new files are added or existing files change, the manifest flags them (`summary.new_files`, `summary.changed_files`, `summary.removed_files`). Discovery reads only the new/changed sections and updates the existing overview — no need to re-read all 25 files when 1 is added.
+
 **Zero change for small projects.** The threshold check runs silently; projects under the limit behave exactly as today.
 
 ## Conversation Behavior
