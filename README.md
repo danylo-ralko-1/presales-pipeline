@@ -18,7 +18,7 @@ This launches Claude Code in the pipeline folder with all instructions loaded au
 
 > "Create a new presales project called Glossary"
 
-Claude will set up the folder structure, ask for your Azure DevOps org and project name, and get everything ready.
+Claude will set up the folder structure, ask for your Azure DevOps org and project name, and get everything ready. The ADO project is created with the Agile process template.
 
 ### Processing requirements
 
@@ -28,7 +28,9 @@ Just drag and drop your files (PDF, DOCX, XLSX, images) directly into the Claude
 >
 > "These are the requirements for the project. Read them and give me an overview."
 
-Claude will save the files, parse them, extract the requirements, and generate a summary with clarification questions for the client.
+Claude will save the files, parse them, extract the requirements, and generate a summary with clarification questions for the client (max 15 questions, formatted as a ready-to-send email).
+
+**Meeting transcriptions:** If you drop a call recording transcript, Claude will ask whether to compact it down to just the key requirements, decisions, and open questions before saving — raw transcriptions have very low information density (~10% signal), so compacting produces a much better overview.
 
 **Large document sets (20+ files):** Each input file is parsed into its own `.md` file in `output/parsed/` — no combined mega-file. Claude reads each parsed file one at a time during discovery and synthesizes everything into an overview with a Source Reference table. Downstream steps use the overview as the primary source and do targeted reads of only the relevant parsed files when detail is needed. Incremental re-ingestion only processes new or changed files.
 
@@ -36,19 +38,38 @@ Claude will save the files, parse them, extract the requirements, and generate a
 
 > "Break down these requirements into user stories with estimates"
 
-Claude will create a structured breakdown with epics, features, stories, and effort estimates (FE/BE/DevOps/Design) — grouped by domain, ordered by development sequence.
+Claude will create a structured breakdown with epics, features, stories, and effort estimates (FE/BE/DevOps/Design) — grouped into multiple domain-specific epics, ordered by development sequence (infrastructure first, core features next, nice-to-haves last). Both `breakdown.json` and `breakdown.xlsx` are generated.
 
 ### Pushing to Azure DevOps
 
 > "Push these stories to ADO"
 
-Claude will create the full hierarchy in Azure DevOps — Epics, Features, User Stories with detailed acceptance criteria and technical context, FE/BE/DevOps tasks — all properly linked. It also creates an Azure Repository and generates Product Overview and Change Requests wiki pages automatically.
+Claude will create the full hierarchy in Azure DevOps:
+
+- **Epics** grouped by functional domain (never a single mega-epic)
+- **Features** under each epic
+- **User Stories** with detailed acceptance criteria, technical context (data model, states, interactions, navigation, API hints), and reference sources listing which input files informed each story
+- **Tasks** — FE, BE, DevOps discipline tasks plus QA tasks ([QA][TD] for test design, [QA][TE] for test execution) for every testable story
+- **Relations** — predecessor and similar-story links between stories
+- **Attachments** — original source files (PDF, DOCX, etc.) are uploaded and attached to each story that references them
+- **Azure Repository** created automatically in the ADO project
+- **Wiki pages** — Product Overview and Change Requests pages generated in ADO
+
+Stories include resume support — if the push is interrupted, re-running picks up where it left off.
 
 ### Generating feature code
 
 > "Generate code for story #1464"
 
-Claude will read the story from ADO, check predecessor and related story branches for context, analyze the shared design system, generate working starter code using shadcn/ui components, push it as a feature branch, and link the branch back to the ADO story. Frontend and backend developers check out the branch and start from a working baseline.
+Claude will read the story from ADO, check predecessor and related story branches for context (to understand WHERE to place the code and HOW to implement it), analyze the shared design system and codebase patterns, generate working starter code using shadcn/ui components, push it as a feature branch (`feature/US-{id}-{kebab-title}`), and link the branch back to the ADO story (both as a description link and an ADO artifact link in the Development section). Frontend and backend developers check out the branch and start from a working baseline.
+
+Code generation strictly implements only what the story's acceptance criteria says — no scope bleed from sibling stories.
+
+### Generating tests
+
+> "Generate tests for story #1464"
+
+Claude will read the developer-edited feature code on the branch, cross-reference with the story's AC from ADO, generate comprehensive tests, and commit them to the feature branch.
 
 ### Handling change requests
 
@@ -56,13 +77,23 @@ Claude will read the story from ADO, check predecessor and related story branche
 >
 > *drop the file into chat*
 
-Claude will analyze the impact, identify affected stories, create a CR work item in ADO, update affected stories with red/green markup showing what changed, and update the Change Requests wiki page.
+Claude will ask whether to create a formal Change Request or just edit the affected stories directly. For a full CR:
+
+- Creates a CR work item in ADO (with AC, technical context, and child tasks)
+- Updates affected stories with red/green markup showing exactly what changed across all fields (AC, Technical Context, Description)
+- Adds a Change Log entry with a link to the CR
+- Creates successor links from affected stories to the CR
+- Updates the Change Requests wiki page
+- Creates a source file in `changes/` and attaches it to the CR in ADO
+- Updates `overview.md` to reflect the new project state
+
+**Verbal change requests** are also tracked — Claude creates a `.txt` file capturing the essence of the request (date, reason, affected stories, summary) so every CR has a traceable source document even without a dropped file.
 
 ### Generating product documentation
 
 > "Create a product overview from the ADO stories"
 
-Claude will fetch all stories from ADO and generate wiki pages covering vision, problem statement, solution summary, user roles, key functional areas, data model overview, and technical environment.
+Claude will fetch all stories from ADO and generate wiki pages covering vision, problem statement, solution summary, user roles, key functional areas, data model overview, technical environment, and key risks & assumptions. The wiki is automatically updated when major changes happen (new pages, new roles, new epics).
 
 ## One-Time Setup
 
@@ -119,21 +150,28 @@ That's it. This opens Claude Code in the pipeline folder with all instructions l
 | Push stories to ADO | "Push these stories to Azure DevOps" |
 | Generate product documentation | "Create a product overview from the ADO stories" |
 | Generate feature code | "Generate code for story #1464" |
+| Generate tests | "Generate tests for story #1464" |
 | Scan codebase patterns | "Scan the codebase and extract conventions" |
 | Handle a change request | "Analyze this change request" *(drop file)* |
+| Handle a verbal change | "The client wants to rename Domain to Category" |
 | Check project status | "What's the status of the Glossary project?" |
 
 ## Pipeline Flow
 
 ```
-Ingest requirements → Breakdown into stories → Push to ADO + Generate wiki pages → Generate feature code
+Ingest requirements → Breakdown into stories → Push to ADO + Generate wiki pages → Generate feature code → Generate tests
 ```
 
-Each step builds on the previous one. ADO becomes the single source of truth once stories are pushed — all downstream operations (change requests, feature code, product docs) read from ADO.
+Each step builds on the previous one. ADO becomes the single source of truth once stories are pushed — all downstream operations (change requests, feature code, product docs, tests) read from ADO.
 
 Optionally, if the target repo already has code:
 ```
 → Scan existing codebase for patterns (improves code generation accuracy)
+```
+
+Change requests can happen at any point after push:
+```
+→ CR analyzed → ADO stories updated → overview.md updated → wiki updated
 ```
 
 ## Project Structure
@@ -142,7 +180,7 @@ Optionally, if the target repo already has code:
 presales-pipeline/
 ├── presales              # CLI entrypoint (used by Claude behind the scenes)
 ├── commands/             # Pipeline command implementations
-├── core/                 # Config, ADO client, parser, context
+├── core/                 # Config, ADO client, parser, context, events
 ├── ado_mcp/              # ADO MCP server for work item management
 ├── design-system.md      # Shared shadcn/ui component catalog (used by all projects)
 ├── projects/             # Your project workspaces (gitignored)
@@ -151,7 +189,7 @@ presales-pipeline/
 │       ├── codebase-patterns.md  # Extracted conventions from target codebase (optional)
 │       ├── input/        # Drop your requirement files here
 │       ├── answers/      # Client answers to clarification questions
-│       ├── changes/      # Change request files
+│       ├── changes/      # Change request source files (also ingested for discovery)
 │       ├── output/       # Everything Claude generates
 │       └── snapshots/    # Auto-snapshots before change requests
 └── CLAUDE.md             # Instructions Claude follows automatically
@@ -173,7 +211,7 @@ These are the Python commands that Claude runs behind the scenes. You don't need
 | Command | Description |
 |---------|-------------|
 | `python3 presales init <project>` | Create a new project |
-| `python3 presales ingest <project>` | Parse requirements from input files |
+| `python3 presales ingest <project>` | Parse requirements from input/ and changes/ |
 | `python3 presales breakdown-export <project>` | Export breakdown to Excel |
 | `python3 presales push <project>` | Push stories to Azure DevOps |
 | `python3 presales status <project>` | Show project status |
