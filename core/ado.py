@@ -355,6 +355,57 @@ def upload_attachment(
                         content_type="application/json-patch+json")
 
 
+def upload_file_blob(config: AdoConfig, file_path: str, filename: str | None = None) -> str:
+    """Upload a file blob to ADO and return the attachment URL.
+
+    This is step 1 of the attachment process — uploads the raw bytes.
+    Use link_attachment() to then link this URL to one or more work items.
+    """
+    from pathlib import Path
+    fp = Path(file_path)
+    if not fp.exists():
+        raise FileNotFoundError(f"Attachment file not found: {file_path}")
+
+    if not filename:
+        filename = fp.name
+
+    encoded_name = urllib.parse.quote(filename, safe="")
+    upload_url = (
+        f"https://dev.azure.com/{config.organization}/{urllib.parse.quote(config.project, safe='')}/"
+        f"_apis/wit/attachments?fileName={encoded_name}&api-version={ADO_API_VERSION}"
+    )
+
+    file_data = fp.read_bytes()
+    headers = {
+        "Authorization": config.auth_header,
+        "Content-Type": "application/octet-stream",
+    }
+    req = urllib.request.Request(upload_url, data=file_data, headers=headers, method="POST")
+
+    time.sleep(RATE_LIMIT_DELAY)
+    with urllib.request.urlopen(req) as resp:
+        upload_result = json.loads(resp.read().decode("utf-8"))
+
+    return upload_result.get("url", "")
+
+
+def link_attachment(config: AdoConfig, work_item_id: int, attachment_url: str,
+                    comment: str = "") -> dict:
+    """Link an already-uploaded attachment URL to a work item."""
+    patches = [{
+        "op": "add",
+        "path": "/relations/-",
+        "value": {
+            "rel": "AttachedFile",
+            "url": attachment_url,
+            "attributes": {"comment": comment},
+        },
+    }]
+    wi_url = f"{config.base_url}/wit/workitems/{work_item_id}?api-version={ADO_API_VERSION}"
+    return _api_request(config, wi_url, method="PATCH", body=patches,
+                        content_type="application/json-patch+json")
+
+
 def ensure_repository(config: AdoConfig, repo_name: str) -> dict:
     """Ensure a Git repository exists in the ADO project.
 

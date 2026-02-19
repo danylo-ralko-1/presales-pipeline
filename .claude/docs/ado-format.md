@@ -36,7 +36,15 @@ Tags are additive — preserve any existing tags on the work item. Use semicolon
 ```html
 As a [role],<br>I want to [action],<br>So that [benefit].
 ```
-Three lines separated by `<br>` only — no `<p>` wrapper, no extra newlines, no gaps between lines. The **Branch** link is added below the user story when feature code is generated (see skill 12, Step 9). Before code generation, the branch line is absent. Epic/Feature are visible through ADO hierarchy links.
+Three lines separated by `<br>` only — no `<p>` wrapper, no extra newlines, no gaps between lines.
+
+**Reference Sources** are appended below the user story text as a numbered list showing which input files were used to generate the story's requirements:
+```html
+As a [role],<br>I want to [action],<br>So that [benefit].<br><br><b>Reference Sources:</b><br><ol><li>RFP_document.pdf</li><li>Transcription_summary_12.08.2026.txt</li></ol>
+```
+Sources are the file names from `output/parsed/` (without the parsed path — use the original input file name). For compacted transcriptions, use the compacted summary file name with date. For change requests, use "Change request from DD.MM.YYYY".
+
+The **Branch** link is added below the user story (before Reference Sources) when feature code is generated (see skill 12, Step 9). Before code generation, the branch line is absent. Epic/Feature are visible through ADO hierarchy links.
 
 **Acceptance Criteria field** (`Microsoft.VSTS.Common.AcceptanceCriteria`):
 ```html

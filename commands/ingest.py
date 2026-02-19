@@ -5,9 +5,10 @@ import click
 from pathlib import Path
 
 from core.config import (
-    get_input_dir, get_output_path, update_state, update_status, save_project
+    get_input_dir, get_changes_dir, get_output_path, update_state, update_status, save_project
 )
 from core.context import compute_input_hash, invalidate_downstream
+from core.events import append_event
 from core.parser import (
     parse_directory, estimate_tokens, compute_file_hash, parsed_filename,
     ParsedFile,
@@ -23,6 +24,7 @@ def run(proj: dict) -> None:
     Only new/changed files are written. Removed files are cleaned up.
     """
     input_dir = get_input_dir(proj)
+    changes_dir = get_changes_dir(proj)
     project_name = proj["project"]
 
     click.secho(f"\n  Ingesting requirements for '{project_name}'", bold=True)
@@ -34,8 +36,13 @@ def run(proj: dict) -> None:
         click.echo(f"    Drop requirement files into: {input_dir}")
         return
 
-    # Parse all files
+    # Parse all files from input/ and changes/
     parsed = parse_directory(input_dir)
+    if changes_dir.exists() and any(changes_dir.rglob("*")):
+        changes_parsed = parse_directory(changes_dir)
+        if changes_parsed:
+            click.echo(f"  Also parsing {len(changes_parsed)} file(s) from changes/")
+            parsed.extend(changes_parsed)
 
     if not parsed:
         click.secho("  ✗ No supported files found", fg="red")
@@ -155,6 +162,12 @@ def run(proj: dict) -> None:
         requirements_ingested=True,
     )
     update_status(proj, "discovery")
+
+    # Log event
+    append_event(proj, "files_ingested",
+                 total=len(success), new=len(new_files),
+                 changed=len(changed_files), removed=len(removed_files),
+                 files=[pf.filename for pf in success])
 
     # Summary
     click.secho(f"\n  ✓ Requirements ingested successfully", fg="green", bold=True)

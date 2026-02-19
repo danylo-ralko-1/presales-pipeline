@@ -12,10 +12,13 @@ Reliability features:
 """
 
 import json
+from pathlib import Path
+
 import click
 
 from core.config import get_output_path, update_state
 from core.context import invalidate_downstream
+from core.events import append_event
 from core import ado as ado_client
 
 
@@ -204,8 +207,9 @@ def run(proj: dict, dry_run: bool = False) -> None:
                 design = story.get("design_days", 0)
                 total = fe + be + devops + design
 
+                ref_sources = story.get("reference_sources", [])
                 description_html = _build_story_description(
-                    user_story_text, epic_name, feat_name
+                    user_story_text, epic_name, feat_name, ref_sources
                 )
                 tech_ctx = story.get("technical_context", {})
                 ac_html = _build_ac_html(ac_list, tech_ctx)
@@ -251,10 +255,20 @@ def run(proj: dict, dry_run: bool = False) -> None:
     if not dry_run:
         _create_relation_links(config, push_data, created)
 
+    # Attach reference source files to stories
+    if not dry_run:
+        _attach_reference_sources(config, proj, push_data, created)
+
     # Update state
     if not dry_run:
         invalidate_downstream(proj, "push")
         update_state(proj, ado_pushed=True)
+
+    # Log event
+    if not dry_run:
+        append_event(proj, "pushed_to_ado",
+                     stories=new_story_count, skipped=skip_count,
+                     epics=total_epics, features=total_features)
 
     click.secho(f"\n  ✓ Push complete", fg="green", bold=True)
     click.echo(f"    Created: {new_story_count} new stories")
@@ -430,13 +444,102 @@ def _create_relation_links(config, push_data: dict, created: dict) -> None:
         click.secho(f"    ✓ Created {link_count} story relation links", fg="green")
 
 
+def _attach_reference_sources(config, proj: dict, push_data: dict, created: dict) -> None:
+    """Upload reference source files and attach them to the stories that use them.
+
+    Each unique file is uploaded once; the attachment URL is then linked to every
+    story whose reference_sources list mentions that file name.
+    """
+    project_name = proj["project"]
+    input_dir = Path(f"projects/{project_name}/input")
+
+    if not input_dir.exists():
+        return
+
+    # Build local ID → ADO ID mapping
+    id_to_ado = {}
+    for story_info in created.get("stories", []):
+        id_to_ado[story_info["id"]] = story_info["ado_id"]
+
+    # Collect all unique source file names and which stories reference them
+    # filename → list of ADO story IDs
+    file_to_stories: dict[str, list[int]] = {}
+    for epic in push_data.get("epics", []):
+        for feature in epic.get("features", []):
+            for story in feature.get("stories", []):
+                story_ado_id = id_to_ado.get(story.get("id", ""))
+                if not story_ado_id:
+                    continue
+                for src in story.get("reference_sources", []):
+                    file_to_stories.setdefault(src, []).append(story_ado_id)
+
+    if not file_to_stories:
+        return
+
+    click.echo("\n  Attaching reference source files...")
+
+    # Build a lookup of available input files (case-insensitive matching)
+    available_files: dict[str, Path] = {}
+    for f in input_dir.iterdir():
+        if f.is_file():
+            available_files[f.name.lower()] = f
+    # Also check raw-transcripts subfolder
+    raw_dir = input_dir / "raw-transcripts"
+    if raw_dir.exists():
+        for f in raw_dir.iterdir():
+            if f.is_file():
+                available_files[f.name.lower()] = f
+
+    attach_count = 0
+    for filename, story_ids in file_to_stories.items():
+        file_path = available_files.get(filename.lower())
+        if not file_path:
+            click.secho(f"    ⚠ Source file not found in input/: {filename}", fg="yellow")
+            continue
+
+        # Upload the file blob once
+        try:
+            attachment_url = ado_client.upload_file_blob(config, str(file_path), filename)
+        except Exception as e:
+            click.secho(f"    ⚠ Failed to upload {filename}: {e}", fg="yellow")
+            continue
+
+        click.echo(f"    ↑ Uploaded: {filename}")
+
+        # Link to each story that references it
+        for story_ado_id in story_ids:
+            try:
+                ado_client.link_attachment(
+                    config, story_ado_id, attachment_url,
+                    comment=f"Reference source: {filename}",
+                )
+                attach_count += 1
+            except Exception as e:
+                click.secho(
+                    f"    ⚠ Failed to attach {filename} to story #{story_ado_id}: {e}",
+                    fg="yellow",
+                )
+
+    if attach_count > 0:
+        click.secho(f"    ✓ Attached {attach_count} source file links", fg="green")
+
+
 # --- HTML builders ---
 
-def _build_story_description(user_story: str, epic: str, feature: str) -> str:
-    """Build HTML description — user story text only, three lines, no italic."""
+def _build_story_description(user_story: str, epic: str, feature: str,
+                              reference_sources: list[str] | None = None) -> str:
+    """Build HTML description — user story text + optional reference sources."""
     # Convert newlines to <br> for three-line display — no extra \n or <p> wrapper
     # to avoid ADO rendering extra gaps between lines
     html_text = user_story.replace("\n", "<br>")
+
+    # Append reference sources if provided
+    if reference_sources:
+        html_text += "<br><br><b>Reference Sources:</b><br><ol>"
+        for src in reference_sources:
+            html_text += f"<li>{src}</li>"
+        html_text += "</ol>"
+
     return html_text
 
 

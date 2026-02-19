@@ -99,6 +99,10 @@ Before running `presales push`, generate this file with full story details:
                   "DELETE /terms/{id} → 204"
                 ]
               },
+              "reference_sources": [
+                "RFP_document.pdf",
+                "Transcription_summary_12.08.2026.txt"
+              ],
               "predecessors": ["US-003"],
               "similar_stories": ["US-007"],
               "skip_qa": false,

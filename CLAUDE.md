@@ -30,7 +30,7 @@ The pipeline uses a **shared design system** (`design-system.md` at the repo roo
 | Command | What it does |
 |---------|-------------|
 | `presales init <project>` | Interactive project setup (folders + config) |
-| `presales ingest <project>` | Parse files → per-file .md in output/parsed/ |
+| `presales ingest <project>` | Parse files from input/ + changes/ → per-file .md in output/parsed/ |
 | `presales breakdown-export <project>` | Convert breakdown.json → breakdown.xlsx |
 | `presales push <project>` | Create ADO work items from breakdown.json (with AC you provide) |
 
