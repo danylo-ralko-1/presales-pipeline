@@ -49,7 +49,7 @@ Claude will create the full hierarchy in Azure DevOps:
 - **Epics** grouped by functional domain (never a single mega-epic)
 - **Features** under each epic
 - **User Stories** with detailed acceptance criteria, technical context (data model, states, interactions, navigation, API hints), and reference sources listing which input files informed each story
-- **Tasks** — FE, BE, DevOps discipline tasks plus QA tasks ([QA][TD] for test design, [QA][TE] for test execution) for every testable story
+- **Tasks** — FE, BE, DevOps discipline tasks plus QA tasks ([QA][TD] with manual test cases derived from AC, [QA][TE] for test execution time tracking) for every testable story
 - **Relations** — predecessor and similar-story links between stories
 - **Attachments** — original source files (PDF, DOCX, etc.) are uploaded and attached to each story that references them
 - **Azure Repository** created automatically in the ADO project
@@ -61,7 +61,7 @@ Stories include resume support — if the push is interrupted, re-running picks 
 
 > "Generate code for story #1464"
 
-Claude will read the story from ADO, check predecessor and related story branches for context (to understand WHERE to place the code and HOW to implement it), analyze the shared design system and project template, generate working starter code using shadcn/ui components, push it as a feature branch (`feature/US-{id}-{kebab-title}`), and link the branch back to the ADO story (both as a description link and an ADO artifact link in the Development section). Frontend and backend developers check out the branch and start from a working baseline.
+Claude will read the story from ADO, check predecessor and related story branches for context (to understand WHERE to place the code and HOW to implement it), analyze the shared design system and the project's pre-defined template (tech stack decisions, conventions), generate working starter code using shadcn/ui components, push it as a feature branch (`feature/US-{id}-{kebab-title}`), and link the branch back to the ADO story (both as a description link and an ADO artifact link in the Development section). Frontend and backend developers check out the branch and start from a working baseline.
 
 Code generation strictly implements only what the story's acceptance criteria says — no scope bleed from sibling stories.
 
@@ -154,6 +154,7 @@ That's it. This opens Claude Code in the pipeline folder with all instructions l
 | Handle a change request | "Analyze this change request" *(drop file)* |
 | Handle a verbal change | "The client wants to rename Domain to Category" |
 | Check project status | "What's the status of the Glossary project?" |
+| Check AI costs | "How much has this project cost so far?" |
 
 ## Pipeline Flow
 
@@ -174,7 +175,7 @@ Change requests can happen at any point after push:
 xproject/
 ├── xproject              # CLI entrypoint (used by Claude behind the scenes)
 ├── commands/             # Pipeline command implementations
-├── core/                 # Config, ADO client, parser, context, events
+├── core/                 # Config, ADO client, parser, context, events, cost tracking
 ├── ado_mcp/              # ADO MCP server for work item management
 ├── design-system.md      # Shared shadcn/ui component catalog (used by all projects)
 ├── projects/             # Your project workspaces (gitignored)
@@ -208,6 +209,8 @@ These are the Python commands that Claude runs behind the scenes. You don't need
 | `python3 xproject breakdown-export <project>` | Export breakdown to Excel |
 | `python3 xproject push <project>` | Push stories to Azure DevOps |
 | `python3 xproject status <project>` | Show project status |
+| `python3 xproject cost <project>` | Show cumulative AI cost for a project |
+| `python3 xproject cost <project> --scan` | List all Claude Code sessions for the workspace |
 | `python3 xproject list` | List all projects |
 
 </details>
