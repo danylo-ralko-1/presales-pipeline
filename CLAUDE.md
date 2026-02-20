@@ -19,12 +19,7 @@ This means the pipeline runs entirely on the user's Claude subscription. No API 
 Ingest requirements → Breakdown into stories → Push to ADO + Generate product documentation → Generate feature code
 ```
 
-Optionally, at any point after code generation begins:
-```
-→ Scan existing codebase for patterns (optional, improves accuracy)
-```
-
-The pipeline uses a **shared design system** (`design-system.md` at the repo root). This is a pre-configured, comprehensive component catalog reused across all projects. If the target repository already has code, the optional codebase scan step extracts conventions into `codebase-patterns.md`. Both the shared design system and codebase patterns (when available) are then used by the code generation step to produce UI code that matches both the component library and the project's coding patterns.
+The pipeline uses a **shared design system** (`design-system.md` at the repo root) and **project templates** (`templates/` directory). The design system is a pre-configured, comprehensive component catalog reused across all projects. Templates define company-standard coding patterns for different tech stacks (folder structure, state management, API patterns, testing conventions, etc.). Both are used by the code generation step to produce code that matches the component library and follows established conventions from day 1 — no codebase scanning needed.
 
 ### What Python scripts do (data I/O only):
 | Command | What it does |
@@ -43,13 +38,12 @@ The pipeline uses a **shared design system** (`design-system.md` at the repo roo
 | Breakdown | Read overview + answers → generate breakdown.json | Local files |
 | Push AC | Generate user story text + detailed AC + technical context → write push_ready.json → then run push script | Local files (breakdown.json + overview + requirements) |
 | Product document | Fetch all ADO stories → generate product overview Wiki pages in ADO | **ADO** (source of truth) |
-| Feature code | Fetch story from ADO → analyze target codebase + codebase-patterns.md + shared design-system.md → generate feature code + API contract → push branch → link in ADO | **ADO** + target codebase + codebase-patterns.md + shared design-system.md (repo root) |
+| Feature code | Fetch story from ADO → analyze target codebase + project template + shared design-system.md → generate feature code + API contract → push branch → link in ADO | **ADO** + target codebase + project template + shared design-system.md (repo root) |
 
 **Invoked on request:**
 | Task | What you do | Data source |
 |------|------------|-------------|
-| Scan codebase | Scan existing codebase → extract conventions into codebase-patterns.md (optional, improves code gen accuracy) | Target codebase |
-| Generate tests | Read developer-edited feature code + AC from ADO → generate comprehensive tests → commit to feature branch | **ADO** + target codebase (feature branch) + codebase-patterns.md |
+| Generate tests | Read developer-edited feature code + AC from ADO → generate comprehensive tests → commit to feature branch | **ADO** + target codebase (feature branch) + project template |
 | Change analysis | Read change request + fetch current ADO stories → analyze impact → update ADO | **ADO** (source of truth) |
 | Status | Read project.yaml → present status summary | Local files |
 
@@ -94,8 +88,8 @@ Before running any command, check if the inputs it depends on are stale:
 | breakdown | overview.md, answers/ | Was overview regenerated? Were new answers added? |
 | push | breakdown.json + push_ready.json | Was breakdown regenerated since last push? |
 | product document | ADO connection + stories in ADO | Can we connect to ADO? Have stories been pushed? |
-| feature code | ADO connection + target codebase + shared design-system.md + codebase-patterns.md (optional) | Can we connect to ADO? Is the target codebase a git repo? If codebase-patterns.md exists, is it stale (>30 commits)? |
-| generate tests | ADO connection + target codebase (feature branch) + codebase-patterns.md (optional) | Can we connect to ADO? Does the feature branch exist? |
+| feature code | ADO connection + target codebase + shared design-system.md + project template | Can we connect to ADO? Is the target codebase a git repo? Is a template configured in project.yaml? |
+| generate tests | ADO connection + target codebase (feature branch) + project template | Can we connect to ADO? Does the feature branch exist? |
 | change | ADO connection | Can we connect to ADO and find stories? |
 
 If stale, warn: "The [X] was generated before the latest [Y]. Running with outdated data may give inaccurate results. Want me to refresh [X] first?"
@@ -115,8 +109,7 @@ All projects live under `~/Downloads/xproject/projects/<ProjectName>/`. Each pro
 
 ```
 projects/<ProjectName>/
-├── project.yaml          # Project config: ADO credentials, state, changes
-├── codebase-patterns.md  # Extracted conventions from target codebase (optional)
+├── project.yaml          # Project config: ADO credentials, state, template reference
 ├── input/                # Raw requirement files (PDF, DOCX, XLSX, TXT, EML, images)
 ├── answers/              # Client answers to clarification questions
 ├── changes/              # Change request source files
@@ -173,7 +166,7 @@ Located in `~/Downloads/xproject/`. Run with `python3 xproject <command>`.
 - **AC format:** 4-7 numbered groups (`AC 1: Title`) with bullet points. Dev-ready from initial push.
 - **Technical Context:** Data Model, States, Interactions, Navigation, API Hints — appended after AC, separated by `<hr>`.
 - **Modifications:** Never overwrite — use red strikethrough + green replacement. Change Log only on change requests.
-- **Tasks:** Always create FE/BE/DevOps child tasks under each User Story. QA tasks (`[QA][TD]` and `[QA][TE]`) are auto-created for testable stories (skipped for pure infra/technical).
+- **Tasks:** Always create FE/BE/DevOps child tasks under each User Story. QA tasks are auto-created for testable stories (skipped for pure infra/technical): `[QA][TD]` with manual test cases in Description (derived from AC), `[QA][TE]` as time-tracking placeholder.
 - **Relations:** Analyze predecessor (builds on) and similar (same pattern) links for every story.
 
 ## JSON Schemas

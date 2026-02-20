@@ -18,7 +18,6 @@ If this is a new conversation or the user seems unfamiliar, give a friendly over
 
 **Also available:**
 - **Extract design system** — I read your Figma file structure and capture colors, typography, spacing, component patterns, and screen blueprints
-- **Scan codebase patterns** — after developers implement 2-3 reference stories, I scan the codebase to learn your conventions (components, data layer, forms, routing, styling, testing) so all generated code matches exactly
 - **Generate tests** — after developers review the feature code, I generate comprehensive tests mapped to each acceptance criterion
 - **Handle change requests** — I analyze scope changes and calculate impact
 - **Product document** — I maintain a living document that always reflects the current state of the app

@@ -61,7 +61,7 @@ Stories include resume support — if the push is interrupted, re-running picks 
 
 > "Generate code for story #1464"
 
-Claude will read the story from ADO, check predecessor and related story branches for context (to understand WHERE to place the code and HOW to implement it), analyze the shared design system and codebase patterns, generate working starter code using shadcn/ui components, push it as a feature branch (`feature/US-{id}-{kebab-title}`), and link the branch back to the ADO story (both as a description link and an ADO artifact link in the Development section). Frontend and backend developers check out the branch and start from a working baseline.
+Claude will read the story from ADO, check predecessor and related story branches for context (to understand WHERE to place the code and HOW to implement it), analyze the shared design system and project template, generate working starter code using shadcn/ui components, push it as a feature branch (`feature/US-{id}-{kebab-title}`), and link the branch back to the ADO story (both as a description link and an ADO artifact link in the Development section). Frontend and backend developers check out the branch and start from a working baseline.
 
 Code generation strictly implements only what the story's acceptance criteria says — no scope bleed from sibling stories.
 
@@ -151,7 +151,6 @@ That's it. This opens Claude Code in the pipeline folder with all instructions l
 | Generate product documentation | "Create a product overview from the ADO stories" |
 | Generate feature code | "Generate code for story #1464" |
 | Generate tests | "Generate tests for story #1464" |
-| Scan codebase patterns | "Scan the codebase and extract conventions" |
 | Handle a change request | "Analyze this change request" *(drop file)* |
 | Handle a verbal change | "The client wants to rename Domain to Category" |
 | Check project status | "What's the status of the Glossary project?" |
@@ -163,11 +162,6 @@ Ingest requirements → Breakdown into stories → Push to ADO + Generate wiki p
 ```
 
 Each step builds on the previous one. ADO becomes the single source of truth once stories are pushed — all downstream operations (change requests, feature code, product docs, tests) read from ADO.
-
-Optionally, if the target repo already has code:
-```
-→ Scan existing codebase for patterns (improves code generation accuracy)
-```
 
 Change requests can happen at any point after push:
 ```
@@ -186,7 +180,6 @@ xproject/
 ├── projects/             # Your project workspaces (gitignored)
 │   └── <ProjectName>/
 │       ├── project.yaml  # Config: ADO credentials, pipeline state
-│       ├── codebase-patterns.md  # Extracted conventions from target codebase (optional)
 │       ├── input/        # Drop your requirement files here
 │       ├── answers/      # Client answers to clarification questions
 │       ├── changes/      # Change request source files (also ingested for discovery)

@@ -80,13 +80,11 @@ Compare the current code to what was originally generated. The developer may hav
 
 ## Step 4: Analyze Existing Test Patterns
 
-**First**, check if `projects/<ProjectName>/codebase-patterns.md` exists. If it does:
-- Read the **Testing Patterns** section (Category 11) — it contains actual test snippets showing the project's exact conventions: test file naming, location, imports, render helpers, mock patterns, assertion style, describe/it nesting
-- Also read the **Mock patterns** subsection for how the project mocks APIs and modules
-- **Staleness check:** Read the `**Commit:**` line and run `git rev-list <scan-hash>..HEAD --count`. If >30 commits, warn: "The codebase patterns file was scanned [N] commits ago. Test conventions may have changed. Want me to re-scan before generating tests?"
-- Follow these patterns exactly — same imports, same helpers, same structure
+**First**, read the project template referenced in `project.yaml` (`template` field) from `~/Downloads/xproject/templates/`. The template's testing section defines the company's standard testing conventions: test framework, file naming/location, mock patterns, assertion style, describe/it nesting, render helpers. Follow these patterns exactly.
 
-**If no `codebase-patterns.md` exists**, fall back to manual analysis. Study how the codebase tests things:
+**Additionally**, scan 2-3 existing test files in the target codebase (if any exist) to catch project-specific deviations from the template. Actual code takes precedence over the template when they conflict.
+
+**If no template is configured**, fall back to manual analysis. Study how the codebase tests things:
 
 - **Test framework:** Jest / Vitest / Mocha / Playwright / Cypress
 - **Test file location:** co-located (`Component.test.tsx`) or separate (`__tests__/Component.test.tsx`)
