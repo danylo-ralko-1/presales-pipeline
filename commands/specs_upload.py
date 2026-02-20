@@ -12,12 +12,15 @@ from pathlib import Path
 
 from core.config import get_output_path, get_specs_dir
 from core import ado as ado_client
+from core.usage import log_operation
 
 
 def run(proj: dict) -> None:
     """Upload FE and BE spec files to corresponding ADO tasks."""
     project_name = proj["project"]
     click.secho(f"\n  Uploading specs to ADO for '{project_name}'", bold=True)
+
+    ado_client.reset_call_counter()
 
     # Load ADO mapping
     mapping = _load_mapping(proj)
@@ -83,6 +86,18 @@ def run(proj: dict) -> None:
             uploaded += 1
         else:
             errors += 1
+
+    # Log usage
+    stats = ado_client.get_call_stats()
+    log_operation(proj, "specs_upload",
+                  ado_api_calls=stats["count"],
+                  duration_seconds=stats["total_seconds"],
+                  details={
+                      "uploaded": uploaded,
+                      "errors": errors,
+                      "fe_specs": len(fe_specs),
+                      "be_specs": len(be_specs),
+                  })
 
     click.secho(f"\n  ✓ Upload complete", fg="green", bold=True)
     click.echo(f"    Uploaded: {uploaded}")
